@@ -102,15 +102,62 @@ function SettingsMenu({ onClose, onNewLife, soundMuted, onToggleMute, soundVolum
 }
 
 /* ── Name Entry Screen ── */
-function NameEntry({ onStart, onLoad, savedName }) {
+function NameEntry({ onStart, onLoad, savedName, savedState }) {
   const [name, setName] = useState('')
+  const [showWarning, setShowWarning] = useState(false)
+
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (name.trim()) { sfxStart(); onStart(name.trim()); }
+    if (!name.trim()) return
+    if (savedName) {
+      sfxClick()
+      setShowWarning(true)
+    } else {
+      sfxStart()
+      onStart(name.trim())
+    }
   }
+
+  const confirmNewGame = () => {
+    setShowWarning(false)
+    sfxStart()
+    onStart(name.trim())
+  }
+
+  const savedInfo = savedState ? {
+    date: `${getMonthName(savedState.month)} ${savedState.year}`,
+    age: savedState.age,
+    cash: savedState.cash,
+  } : null;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-crt-bg p-4">
+      {showWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.85)' }}>
+          <div className="crt-screen bg-crt-dark border-2 border-danger rounded-lg p-6 max-w-sm w-full shadow-[0_0_30px_rgba(255,51,51,0.2)]">
+            <p className="text-danger text-sm font-bold tracking-wider mb-2">╔══ WARNING ══╗</p>
+            <p className="text-phosphor text-sm mb-3">Starting a new game will <span className="text-danger">permanently erase</span> your existing save:</p>
+            <div className="border border-crt-border rounded p-3 mb-4 text-xs">
+              <p className="text-amber"><span className="text-amber-dim">PLAYER: </span>{savedName.toUpperCase()}</p>
+              {savedInfo && <>
+                <p className="text-amber"><span className="text-amber-dim">DATE: </span>{savedInfo.date}</p>
+                <p className="text-amber"><span className="text-amber-dim">AGE: </span>{savedInfo.age}</p>
+                <p className="text-phosphor"><span className="text-phosphor-dim">CASH: </span>${savedInfo.cash.toLocaleString()}</p>
+              </>}
+            </div>
+            <p className="text-phosphor-dim text-xs mb-4">This cannot be undone. Are you sure?</p>
+            <div className="flex gap-3">
+              <button onClick={confirmNewGame}
+                className="flex-1 bg-crt-bg border border-danger text-danger font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:bg-danger hover:text-crt-bg transition-all"
+              >[ ERASE & START NEW ]</button>
+              <button onClick={() => { sfxClick(); setShowWarning(false); }}
+                className="flex-1 bg-crt-bg border border-phosphor-dim text-phosphor font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-phosphor transition-all"
+              >[ CANCEL ]</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="crt-screen bg-crt-dark border-2 border-crt-border rounded-lg p-8 max-w-md w-full shadow-[0_0_30px_rgba(51,255,51,0.1)]">
         <h1 className="text-phosphor text-3xl font-bold text-center mb-2 text-glow tracking-wider">
           EIGHTIES TYCOON
@@ -733,9 +780,10 @@ function App() {
   if (!state.gameStarted) {
     return (
       <NameEntry
-        onStart={(name) => dispatch({ type: 'START_GAME', name })}
+        onStart={(name) => { deleteSave(); dispatch({ type: 'START_GAME', name }); }}
         onLoad={handleLoad}
         savedName={savedName}
+        savedState={savedState}
       />
     );
   }
