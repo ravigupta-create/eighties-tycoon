@@ -1,5 +1,6 @@
 import { useReducer, useState } from 'react'
 import { INITIAL_STATE, gameReducer, getMonthName } from './gameState'
+import { COMPANIES, portfolioValue } from './stockMarket'
 import './App.css'
 
 function NameEntry({ onStart }) {
@@ -69,8 +70,218 @@ function StatBar({ label, value, max, color = 'phosphor' }) {
   )
 }
 
-function GameScreen({ state, dispatch }) {
+/* ── Mini sparkline (last 12 months) ── */
+function Sparkline({ history }) {
+  if (history.length < 2) return null
+  const min = Math.min(...history)
+  const max = Math.max(...history)
+  const range = max - min || 1
+  const w = 80
+  const h = 20
+  const points = history.map((v, i) => {
+    const x = (i / (history.length - 1)) * w
+    const y = h - ((v - min) / range) * h
+    return `${x},${y}`
+  }).join(' ')
+
+  const up = history[history.length - 1] >= history[0]
+
+  return (
+    <svg width={w} height={h} className="inline-block align-middle">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={up ? '#33ff33' : '#ff3333'}
+        strokeWidth="1.5"
+      />
+    </svg>
+  )
+}
+
+/* ── Stock row with buy/sell ── */
+function StockRow({ company, stockData, owned, cash, dispatch }) {
+  const [qty, setQty] = useState(1)
+  const prev = stockData.history.length >= 2
+    ? stockData.history[stockData.history.length - 2]
+    : stockData.price
+  const change = stockData.price - prev
+  const changePct = ((change / prev) * 100).toFixed(1)
+  const up = change >= 0
+  const maxBuy = Math.floor(cash / stockData.price)
+
+  return (
+    <div className="border border-crt-border rounded p-3 mb-2">
+      {/* Top row: ticker, name, sparkline */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-3">
+          <span className="text-amber font-bold text-sm">{company.ticker}</span>
+          <span className="text-phosphor-dim text-xs hidden sm:inline">{company.name}</span>
+        </div>
+        <Sparkline history={stockData.history} />
+      </div>
+
+      {/* Price row */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-phosphor text-lg">${stockData.price.toFixed(2)}</span>
+        <span className={`text-sm ${up ? 'text-phosphor' : 'text-danger'}`}>
+          {up ? '▲' : '▼'} ${Math.abs(change).toFixed(2)} ({up ? '+' : ''}{changePct}%)
+        </span>
+      </div>
+
+      {/* Trend indicator */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-phosphor-dim text-xs">
+          TREND: {stockData.trend === 1 ? '↑ BULL' : stockData.trend === -1 ? '↓ BEAR' : '— NEUTRAL'}
+        </span>
+        <span className="text-phosphor-dim text-xs">
+          OWNED: <span className="text-phosphor">{owned}</span>
+          {owned > 0 && (
+            <span className="text-amber ml-1">(${(owned * stockData.price).toFixed(2)})</span>
+          )}
+        </span>
+      </div>
+
+      {/* Buy / Sell controls */}
+      <div className="flex items-center gap-2">
+        <label className="text-phosphor-dim text-xs">QTY:</label>
+        <input
+          type="number"
+          min={1}
+          max={999}
+          value={qty}
+          onChange={(e) => setQty(Math.max(1, parseInt(e.target.value) || 1))}
+          className="bg-crt-bg border border-crt-border text-phosphor font-[family-name:var(--font-crt)] text-xs w-14 px-2 py-1 rounded outline-none focus:border-phosphor"
+        />
+        <button
+          disabled={qty > maxBuy}
+          onClick={() => dispatch({ type: 'BUY_STOCK', companyId: company.id, qty })}
+          className="bg-crt-bg border border-phosphor-dim text-phosphor font-[family-name:var(--font-crt)] text-xs px-3 py-1 rounded cursor-pointer hover:border-phosphor hover:shadow-[0_0_6px_rgba(51,255,51,0.2)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          BUY (${(stockData.price * qty).toFixed(2)})
+        </button>
+        <button
+          disabled={qty > owned}
+          onClick={() => dispatch({ type: 'SELL_STOCK', companyId: company.id, qty })}
+          className="bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-xs px-3 py-1 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_6px_rgba(255,176,0,0.2)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          SELL
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ── Portfolio tab ── */
+function PortfolioPanel({ state, dispatch }) {
+  const totalValue = portfolioValue(state.portfolio, state.stocks)
+  const netWorth = +(state.cash + totalValue).toFixed(2)
+
+  return (
+    <div>
+      {/* Summary bar */}
+      <div className="border border-crt-border rounded p-3 mb-3 flex flex-wrap gap-4 justify-between text-sm">
+        <span className="text-phosphor">
+          <span className="text-phosphor-dim">CASH: </span>${state.cash.toLocaleString()}
+        </span>
+        <span className="text-amber">
+          <span className="text-amber-dim">HOLDINGS: </span>${totalValue.toLocaleString()}
+        </span>
+        <span className="text-phosphor text-glow">
+          <span className="text-phosphor-dim">NET WORTH: </span>${netWorth.toLocaleString()}
+        </span>
+      </div>
+
+      {/* Stock listings */}
+      {COMPANIES.map((co) => (
+        <StockRow
+          key={co.id}
+          company={co}
+          stockData={state.stocks[co.id]}
+          owned={state.portfolio[co.id]}
+          cash={state.cash}
+          dispatch={dispatch}
+        />
+      ))}
+    </div>
+  )
+}
+
+/* ── Main status tab ── */
+function StatusPanel({ state, dispatch }) {
   const healthColor = state.health > 60 ? 'phosphor' : state.health > 30 ? 'amber' : 'danger'
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Left: Player Info */}
+      <div className="border border-crt-border rounded p-4">
+        <p className="text-phosphor-dim text-xs mb-3">═══ PLAYER STATUS ═══</p>
+        <p className="text-phosphor mb-2">
+          <span className="text-phosphor-dim">NAME: </span>
+          {state.playerName.toUpperCase()}
+        </p>
+        <p className="text-amber mb-2">
+          <span className="text-amber-dim">DATE: </span>
+          {getMonthName(state.month)} {state.year}
+        </p>
+        <p className="text-phosphor mb-4">
+          <span className="text-phosphor-dim">CASH: </span>
+          <span className="text-glow">${state.cash.toLocaleString()}</span>
+        </p>
+        <StatBar label="HEALTH" value={state.health} max={100} color={healthColor} />
+      </div>
+
+      {/* Right: Actions */}
+      <div className="border border-crt-border rounded p-4">
+        <p className="text-phosphor-dim text-xs mb-3">═══ ACTIONS ═══</p>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => dispatch({ type: 'ADVANCE_MONTH' })}
+            className="bg-crt-bg border border-phosphor-dim text-phosphor font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-phosphor hover:shadow-[0_0_8px_rgba(51,255,51,0.2)] transition-all text-left"
+          >
+            {'>'} ADVANCE MONTH
+          </button>
+          <button
+            onClick={() => dispatch({ type: 'UPDATE_CASH', amount: 50 })}
+            className="bg-crt-bg border border-phosphor-dim text-phosphor font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-phosphor hover:shadow-[0_0_8px_rgba(51,255,51,0.2)] transition-all text-left"
+          >
+            {'>'} WORK (+$50)
+          </button>
+          <button
+            onClick={() => {
+              dispatch({ type: 'UPDATE_CASH', amount: -20 })
+              dispatch({ type: 'UPDATE_HEALTH', amount: 10 })
+            }}
+            className="bg-crt-bg border border-phosphor-dim text-amber font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_8px_rgba(255,176,0,0.2)] transition-all text-left"
+          >
+            {'>'} REST (-$20, +10% HP)
+          </button>
+          <button
+            onClick={() => dispatch({ type: 'UPDATE_HEALTH', amount: -5 })}
+            className="bg-crt-bg border border-phosphor-dim text-danger font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-danger hover:shadow-[0_0_8px_rgba(255,51,51,0.2)] transition-all text-left"
+          >
+            {'>'} HUSTLE (-5% HP)
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GameScreen({ state, dispatch }) {
+  const [tab, setTab] = useState('status')
+
+  const tabBtn = (id, label) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`font-[family-name:var(--font-crt)] text-sm px-4 py-2 cursor-pointer transition-all border-b-2 ${
+        tab === id
+          ? 'text-phosphor border-phosphor'
+          : 'text-phosphor-dim border-transparent hover:text-phosphor hover:border-phosphor-dim'
+      }`}
+    >
+      {label}
+    </button>
+  )
 
   return (
     <div className="min-h-screen bg-crt-bg p-4 flex flex-col items-center">
@@ -81,65 +292,22 @@ function GameScreen({ state, dispatch }) {
             <h1 className="text-phosphor text-xl font-bold text-glow tracking-wider">
               EIGHTIES TYCOON
             </h1>
-            <span className="text-phosphor-dim text-sm">
-              v1.0
+            <span className="text-amber text-sm">
+              {getMonthName(state.month)} {state.year}
             </span>
           </div>
         </div>
 
-        {/* Status Panel */}
-        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Left: Player Info */}
-          <div className="border border-crt-border rounded p-4">
-            <p className="text-phosphor-dim text-xs mb-3">═══ PLAYER STATUS ═══</p>
-            <p className="text-phosphor mb-2">
-              <span className="text-phosphor-dim">NAME: </span>
-              {state.playerName.toUpperCase()}
-            </p>
-            <p className="text-amber mb-2">
-              <span className="text-amber-dim">DATE: </span>
-              {getMonthName(state.month)} {state.year}
-            </p>
-            <p className="text-phosphor mb-4">
-              <span className="text-phosphor-dim">CASH: </span>
-              <span className="text-glow">${state.cash.toLocaleString()}</span>
-            </p>
-            <StatBar label="HEALTH" value={state.health} max={100} color={healthColor} />
-          </div>
+        {/* Tab bar */}
+        <div className="flex border-b border-crt-border bg-crt-bg">
+          {tabBtn('status', '[ STATUS ]')}
+          {tabBtn('portfolio', '[ PORTFOLIO ]')}
+        </div>
 
-          {/* Right: Actions */}
-          <div className="border border-crt-border rounded p-4">
-            <p className="text-phosphor-dim text-xs mb-3">═══ ACTIONS ═══</p>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => dispatch({ type: 'ADVANCE_MONTH' })}
-                className="bg-crt-bg border border-phosphor-dim text-phosphor font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-phosphor hover:shadow-[0_0_8px_rgba(51,255,51,0.2)] transition-all text-left"
-              >
-                {'>'} ADVANCE MONTH
-              </button>
-              <button
-                onClick={() => dispatch({ type: 'UPDATE_CASH', amount: 50 })}
-                className="bg-crt-bg border border-phosphor-dim text-phosphor font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-phosphor hover:shadow-[0_0_8px_rgba(51,255,51,0.2)] transition-all text-left"
-              >
-                {'>'} WORK (+$50)
-              </button>
-              <button
-                onClick={() => {
-                  dispatch({ type: 'UPDATE_CASH', amount: -20 })
-                  dispatch({ type: 'UPDATE_HEALTH', amount: 10 })
-                }}
-                className="bg-crt-bg border border-phosphor-dim text-amber font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_8px_rgba(255,176,0,0.2)] transition-all text-left"
-              >
-                {'>'} REST (-$20, +10% HP)
-              </button>
-              <button
-                onClick={() => dispatch({ type: 'UPDATE_HEALTH', amount: -5 })}
-                className="bg-crt-bg border border-phosphor-dim text-danger font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-danger hover:shadow-[0_0_8px_rgba(255,51,51,0.2)] transition-all text-left"
-              >
-                {'>'} HUSTLE (-5% HP)
-              </button>
-            </div>
-          </div>
+        {/* Tab content */}
+        <div className="p-4">
+          {tab === 'status' && <StatusPanel state={state} dispatch={dispatch} />}
+          {tab === 'portfolio' && <PortfolioPanel state={state} dispatch={dispatch} />}
         </div>
 
         {/* Terminal Log */}
@@ -150,6 +318,9 @@ function GameScreen({ state, dispatch }) {
           </p>
           <p className="text-phosphor text-sm">
             {'>'} You have ${state.cash.toLocaleString()} and {state.health}% health.
+          </p>
+          <p className="text-phosphor text-sm">
+            {'>'} Portfolio value: ${portfolioValue(state.portfolio, state.stocks).toLocaleString()}
           </p>
           <p className="text-phosphor-dim text-sm animate-pulse">
             {'>'} Awaiting command_
