@@ -1,6 +1,7 @@
 import { useReducer, useState, useRef, useEffect, useCallback } from 'react'
 import { INITIAL_STATE, gameReducer, getMonthName, LIFESTYLE_TIERS } from './gameState'
 import { COMPANIES, portfolioValue } from './stockMarket'
+import { PROPERTIES, totalPropertyValue, totalMaintenance, totalPropertyHappiness } from './realEstate'
 import { rollRandomEvent } from './randomEvents'
 import { saveGame, loadGame, deleteSave, hasSave, saveSettings, loadSettings } from './saveLoad'
 import {
@@ -192,7 +193,8 @@ function NameEntry({ onStart, onLoad, savedName, savedState }) {
 /* ── Game Over Screen ── */
 function GameOverScreen({ state, dispatch, onNewLife }) {
   const totalValue = portfolioValue(state.portfolio, state.stocks)
-  const netWorth = +(state.cash + totalValue).toFixed(2)
+  const propValue = totalPropertyValue(state.properties || [])
+  const netWorth = +(state.cash + totalValue + propValue).toFixed(2)
   const yearsPlayed = state.year - 1980
   const monthsPlayed = yearsPlayed * 12 + state.month
 
@@ -220,6 +222,7 @@ function GameOverScreen({ state, dispatch, onNewLife }) {
             <div className="grid grid-cols-2 gap-2 text-sm">
               <p className="text-phosphor"><span className="text-phosphor-dim">CASH: </span>${state.cash.toLocaleString()}</p>
               <p className="text-amber"><span className="text-amber-dim">STOCKS: </span>${totalValue.toLocaleString()}</p>
+              <p className="text-amber"><span className="text-amber-dim">PROPERTY: </span>${propValue.toLocaleString()}</p>
             </div>
             <div className="mt-3 text-center">
               <p className="text-phosphor-dim text-xs">FINAL NET WORTH</p>
@@ -501,6 +504,114 @@ function LifeLog({ log }) {
   )
 }
 
+/* ── Real Estate Panel ── */
+function RealEstatePanel({ state, dispatch }) {
+  const propValue = totalPropertyValue(state.properties);
+  const monthlyMaint = totalMaintenance(state.properties);
+  const monthlyJoy = totalPropertyHappiness(state.properties);
+
+  // Count how many of each type the player owns
+  const ownedCounts = {};
+  for (const p of state.properties) {
+    ownedCounts[p.propertyId] = (ownedCounts[p.propertyId] || 0) + 1;
+  }
+
+  return (
+    <div>
+      {/* Summary */}
+      <div className="border border-crt-border rounded p-3 mb-3 flex flex-wrap gap-4 justify-between text-sm">
+        <span className="text-phosphor">
+          <span className="text-phosphor-dim">PROPERTIES: </span>{state.properties.length}
+        </span>
+        <span className="text-amber">
+          <span className="text-amber-dim">TOTAL VALUE: </span>${propValue.toLocaleString()}
+        </span>
+        <span className="text-[#00ffff]">
+          <span className="text-phosphor-dim">JOY: </span>+{monthlyJoy}/mo
+        </span>
+        <span className="text-danger">
+          <span className="text-phosphor-dim">MAINT: </span>-${monthlyMaint}/mo
+        </span>
+      </div>
+
+      {/* Properties for sale */}
+      <div className="border border-crt-border rounded p-3 mb-3">
+        <p className="text-phosphor-dim text-xs mb-3">═══ PROPERTIES FOR SALE ═══</p>
+        <div className="flex flex-col gap-2">
+          {PROPERTIES.map((prop) => {
+            const canBuy = state.cash >= prop.basePrice;
+            return (
+              <div key={prop.id} className="border border-crt-border rounded p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-amber font-bold text-sm">{prop.icon} {prop.name.toUpperCase()}</span>
+                  <span className="text-phosphor text-sm">${prop.basePrice.toLocaleString()}</span>
+                </div>
+                <p className="text-phosphor-dim text-xs mb-2">{prop.description}</p>
+                <div className="flex items-center justify-between mb-2 text-[10px]">
+                  <span className="text-[#00ffff]">+{prop.happinessBonus} JOY/mo</span>
+                  <span className="text-danger">-${prop.maintenance} MAINT/mo</span>
+                  <span className="text-phosphor-dim">~{(prop.appreciationRate * 100).toFixed(1)}%/mo growth</span>
+                </div>
+                <button
+                  disabled={!canBuy}
+                  onClick={() => { sfxBuy(); dispatch({ type: 'BUY_PROPERTY', propertyId: prop.id, price: prop.basePrice }); }}
+                  className="w-full bg-crt-bg border border-phosphor-dim text-phosphor font-[family-name:var(--font-crt)] text-xs px-3 py-1.5 rounded cursor-pointer hover:border-phosphor hover:shadow-[0_0_6px_rgba(51,255,51,0.2)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  BUY FOR ${prop.basePrice.toLocaleString()}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Owned properties */}
+      {state.properties.length > 0 && (
+        <div className="border border-crt-border rounded p-3">
+          <p className="text-phosphor-dim text-xs mb-3">═══ YOUR PROPERTIES ═══</p>
+          <div className="flex flex-col gap-2">
+            {state.properties.map((prop, idx) => {
+              const def = PROPERTIES.find(p => p.id === prop.propertyId);
+              if (!def) return null;
+              const profit = +(prop.currentValue - prop.purchasePrice).toFixed(2);
+              const profitPct = ((profit / prop.purchasePrice) * 100).toFixed(1);
+              const isUp = profit >= 0;
+
+              return (
+                <div key={idx} className="border border-crt-border rounded p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-amber font-bold text-sm">{def.icon} {def.name.toUpperCase()}</span>
+                    <span className="text-phosphor text-sm">${prop.currentValue.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between mb-1 text-xs">
+                    <span className="text-phosphor-dim">
+                      Bought: ${prop.purchasePrice.toLocaleString()} ({prop.monthsOwned}mo ago)
+                    </span>
+                    <span className={isUp ? 'text-phosphor' : 'text-danger'}>
+                      {isUp ? '▲' : '▼'} ${Math.abs(profit).toLocaleString()} ({isUp ? '+' : ''}{profitPct}%)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mb-2 text-[10px]">
+                    <span className="text-[#00ffff]">+{def.happinessBonus} JOY/mo</span>
+                    <span className="text-danger">-${def.maintenance} MAINT/mo</span>
+                  </div>
+                  <button
+                    onClick={() => { sfxSell(); dispatch({ type: 'SELL_PROPERTY', index: idx }); }}
+                    className="w-full bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-xs px-3 py-1.5 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_6px_rgba(255,176,0,0.2)] transition-all"
+                  >
+                    SELL FOR ${prop.currentValue.toLocaleString()}
+                    {isUp ? ` (+$${profit.toLocaleString()})` : ` (-$${Math.abs(profit).toLocaleString()})`}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── News Ticker ── */
 function NewsTicker({ headline, sentiment, expenseMultiplier, expenseMultiplierExpiry }) {
   const borderColor = sentiment === 'positive' ? 'border-phosphor' : sentiment === 'negative' ? 'border-danger' : 'border-amber';
@@ -540,7 +651,8 @@ function GameScreen({ state, dispatch, onNewLife }) {
   const [soundMuted, setSoundMuted] = useState(isMuted())
   const [soundVolume, setSoundVolume] = useState(getVolume())
   const totalValue = portfolioValue(state.portfolio, state.stocks)
-  const netWorth = +(state.cash + totalValue).toFixed(2)
+  const propValue = totalPropertyValue(state.properties || [])
+  const netWorth = +(state.cash + totalValue + propValue).toFixed(2)
 
   // Sound-trigger on log events (market crashes, booms, birthdays)
   const prevLogLen = useRef(state.log.length);
@@ -724,11 +836,13 @@ function GameScreen({ state, dispatch, onNewLife }) {
             <div className="flex border-b border-crt-border bg-crt-bg">
               {tabBtn('status', '[ STATUS ]')}
               {tabBtn('portfolio', '[ PORTFOLIO ]')}
+              {tabBtn('realestate', '[ REAL ESTATE ]')}
             </div>
 
             <div className="p-4">
               {tab === 'status' && <StatusPanel state={state} dispatch={dispatch} />}
               {tab === 'portfolio' && <PortfolioPanel state={state} dispatch={dispatch} />}
+              {tab === 'realestate' && <RealEstatePanel state={state} dispatch={dispatch} />}
             </div>
           </div>
         </div>

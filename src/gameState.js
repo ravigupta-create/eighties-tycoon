@@ -1,5 +1,6 @@
 import { initStocks, initPortfolio, tickStocks } from './stockMarket'
 import { rollHeadline, resetHeadlineHistory } from './newsHeadlines'
+import { initProperties, tickProperties, totalMaintenance, totalPropertyHappiness } from './realEstate'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -43,6 +44,8 @@ export const INITIAL_STATE = {
   expenseMultiplier: 1.0,   // current multiplier on living costs
   expenseMultiplierExpiry: 0, // months remaining for expense effect
   headlineHistory: [],      // last 5 headlines for display
+  // Real estate
+  properties: initProperties(), // array of owned property instances
 };
 
 let logIdCounter = 0;
@@ -121,10 +124,16 @@ export function gameReducer(state, action) {
         expExpiry = news.expenseEffect.duration;
       }
 
-      // ── Deduct living expenses (with multiplier) ──
+      // ── Tick property values ──
+      const newProperties = tickProperties(state.properties);
+      const propMaintenance = totalMaintenance(newProperties);
+      const propHappiness = totalPropertyHappiness(newProperties);
+
+      // ── Deduct living expenses (with multiplier) + property maintenance ──
       const tier = getTier(state.lifestyleTier);
       const baseExpenses = totalExpenses(tier);
-      const expenses = Math.round(baseExpenses * expMult);
+      const livingExpenses = Math.round(baseExpenses * expMult);
+      const expenses = livingExpenses + propMaintenance;
       const canAfford = state.cash >= expenses;
       const actualExpenses = canAfford ? expenses : state.cash;
       let newCash = +(state.cash - actualExpenses).toFixed(2);
@@ -143,6 +152,7 @@ export function gameReducer(state, action) {
       else if (state.lifestyleTier === 'luxury') happinessDelta = 3;
       if (!canAfford) happinessDelta -= 5;
       happinessDelta += news.happinessEffect;
+      happinessDelta += propHappiness; // property happiness bonus
       let newHappiness = clamp(state.happiness + happinessDelta, 0, 100);
 
       // ── Build log entries ──
@@ -162,20 +172,23 @@ export function gameReducer(state, action) {
       }
 
       // Expense log
-      const expenseLabel = expMult !== 1.0
-        ? `$${expenses} (${expMult > 1 ? '+' : ''}${Math.round((expMult - 1) * 100)}%)`
-        : `$${expenses}`;
+      const livingLabel = expMult !== 1.0
+        ? `$${livingExpenses} (${expMult > 1 ? '+' : ''}${Math.round((expMult - 1) * 100)}%)`
+        : `$${livingExpenses}`;
+      const totalLabel = propMaintenance > 0
+        ? `${livingLabel} + $${propMaintenance} property`
+        : livingLabel;
 
       if (canAfford) {
         newLog = addLog(newLog, monthName, newYear,
-          `You paid ${expenseLabel} in living expenses (${tier.name}).`, 'info');
+          `You paid ${totalLabel} in expenses (${tier.name}).`, 'info');
       } else {
         newLog = addLog(newLog, monthName, newYear,
-          `Can't cover ${expenseLabel} expenses! Paid $${actualExpenses}. Health and mood suffer.`, 'danger');
+          `Can't cover $${expenses} expenses! Paid $${actualExpenses}. Health and mood suffer.`, 'danger');
       }
 
       newLog = addLog(newLog, monthName, newYear,
-        `Rent: $${tier.rent} | Food: $${tier.food} | Misc: $${tier.misc}`, 'dim');
+        `Rent: $${tier.rent} | Food: $${tier.food} | Misc: $${tier.misc}${propMaintenance > 0 ? ` | Property: $${propMaintenance}` : ''}`, 'dim');
 
       for (const evt of marketEvents) {
         newLog = addLog(newLog, monthName, newYear, evt.text, evt.type);
@@ -226,6 +239,7 @@ export function gameReducer(state, action) {
         expenseMultiplier: expMult,
         expenseMultiplierExpiry: expExpiry,
         headlineHistory,
+        properties: newProperties,
       };
 
       return checkGameOver(next);
@@ -343,6 +357,43 @@ export function gameReducer(state, action) {
       };
     }
 
+    case 'BUY_PROPERTY': {
+      const { propertyId, price } = action;
+      if (price > state.cash) return state;
+      const monthName = MONTHS[state.month];
+      const newProp = {
+        propertyId,
+        purchasePrice: price,
+        currentValue: price,
+        monthsOwned: 0,
+      };
+      return {
+        ...state,
+        cash: +(state.cash - price).toFixed(2),
+        properties: [...state.properties, newProp],
+        log: addLog(state.log, monthName, state.year, `Bought property for $${price.toLocaleString()}!`, 'success'),
+      };
+    }
+
+    case 'SELL_PROPERTY': {
+      const { index } = action;
+      const prop = state.properties[index];
+      if (!prop) return state;
+      const monthName = MONTHS[state.month];
+      const salePrice = prop.currentValue;
+      const profit = +(salePrice - prop.purchasePrice).toFixed(2);
+      const profitText = profit >= 0
+        ? `Sold property for $${salePrice.toLocaleString()} (+$${profit.toLocaleString()} profit)!`
+        : `Sold property for $${salePrice.toLocaleString()} (-$${Math.abs(profit).toLocaleString()} loss).`;
+      const logType = profit >= 0 ? 'success' : 'danger';
+      return {
+        ...state,
+        cash: +(state.cash + salePrice).toFixed(2),
+        properties: state.properties.filter((_, i) => i !== index),
+        log: addLog(state.log, monthName, state.year, profitText, logType),
+      };
+    }
+
     case 'LOAD_SAVE': {
       const saved = action.state;
       if (saved.log && saved.log.length > 0) {
@@ -354,7 +405,7 @@ export function gameReducer(state, action) {
     case 'RESET':
       logIdCounter = 0;
       resetHeadlineHistory();
-      return { ...INITIAL_STATE, stocks: initStocks(), portfolio: initPortfolio(), log: [] };
+      return { ...INITIAL_STATE, stocks: initStocks(), portfolio: initPortfolio(), properties: initProperties(), log: [] };
 
     default:
       return state;
