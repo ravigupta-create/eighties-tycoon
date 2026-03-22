@@ -9,7 +9,7 @@ export const LIFESTYLE_TIERS = [
   { id: 'budget',   name: 'Budget',   rent: 50,  food: 30,  misc: 20,  healthDrain: 3 },
   { id: 'standard', name: 'Standard', rent: 120, food: 60,  misc: 40,  healthDrain: 1 },
   { id: 'upscale',  name: 'Upscale',  rent: 300, food: 120, misc: 80,  healthDrain: 0 },
-  { id: 'luxury',   name: 'Luxury',   rent: 600, food: 250, misc: 200, healthDrain: -2 }, // negative = heals
+  { id: 'luxury',   name: 'Luxury',   rent: 600, food: 250, misc: 200, healthDrain: -2 },
 ];
 
 function getTier(tierId) {
@@ -27,11 +27,16 @@ export const INITIAL_STATE = {
   age: 18,
   cash: 500,
   health: 100,
+  happiness: 75,
   gameStarted: false,
+  gameOver: false,
+  gameOverReason: '',
   lifestyleTier: 'budget',
   stocks: initStocks(),
   portfolio: initPortfolio(),
-  log: [], // { id, monthName, year, text, type }
+  log: [],
+  monthsSinceEvent: 0,
+  pendingEvent: null, // { prompt, choices }
 };
 
 let logIdCounter = 0;
@@ -44,7 +49,23 @@ export function getMonthName(monthIndex) {
   return MONTHS[monthIndex];
 }
 
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
+}
+
+function checkGameOver(state) {
+  if (state.health <= 0) {
+    return { ...state, gameOver: true, gameOverReason: 'Your health gave out. The 80s were too much for you.' };
+  }
+  if (state.happiness <= 0) {
+    return { ...state, gameOver: true, gameOverReason: 'Crushed by despair. The neon lights faded to black.' };
+  }
+  return state;
+}
+
 export function gameReducer(state, action) {
+  if (state.gameOver && action.type !== 'RESET') return state;
+
   switch (action.type) {
     case 'START_GAME':
       return {
@@ -55,88 +76,173 @@ export function gameReducer(state, action) {
       };
 
     case 'ADVANCE_MONTH': {
-      // 1. Advance calendar
-      const prevMonth = state.month;
-      const nextMonthIdx = prevMonth + 1;
+      // Block if there's a pending event
+      if (state.pendingEvent) return state;
+
+      const nextMonthIdx = state.month + 1;
       const rollover = nextMonthIdx >= 12;
       const newMonth = rollover ? 0 : nextMonthIdx;
       const newYear = rollover ? state.year + 1 : state.year;
       const monthName = MONTHS[newMonth];
 
-      // 2. Age up in January (except the very first January 1980)
+      // Age up in January
       let newAge = state.age;
-      if (newMonth === 0 && (newYear > 1980)) {
+      if (newMonth === 0 && newYear > 1980) {
         newAge = state.age + 1;
       }
 
-      // 3. Tick stocks
+      // Tick stocks
       const { stocks: newStocks, events: marketEvents } = tickStocks(state.stocks);
 
-      // 4. Deduct living expenses
+      // Deduct living expenses
       const tier = getTier(state.lifestyleTier);
       const expenses = totalExpenses(tier);
       const canAfford = state.cash >= expenses;
       const actualExpenses = canAfford ? expenses : state.cash;
       let newCash = +(state.cash - actualExpenses).toFixed(2);
 
-      // 5. Health effects
-      let healthDelta = -tier.healthDrain; // healthDrain positive = lose health, so negate for "change"
-      // Actually: healthDrain is how much health you LOSE, negative healthDrain means you gain
-      // So: health change = -healthDrain
-      if (!canAfford) {
-        healthDelta = -8; // can't pay bills = big health hit
-      }
-      const newHealth = Math.max(0, Math.min(100, state.health + healthDelta));
+      // Health effects from lifestyle
+      let healthDelta = -tier.healthDrain;
+      if (!canAfford) healthDelta = -8;
+      const newHealth = clamp(state.health + healthDelta, 0, 100);
 
-      // 6. Build log entries
+      // Happiness drift: budget lifestyle slowly drains happiness
+      let happinessDelta = 0;
+      if (state.lifestyleTier === 'budget') happinessDelta = -2;
+      else if (state.lifestyleTier === 'standard') happinessDelta = 0;
+      else if (state.lifestyleTier === 'upscale') happinessDelta = 1;
+      else if (state.lifestyleTier === 'luxury') happinessDelta = 3;
+      if (!canAfford) happinessDelta -= 5;
+      const newHappiness = clamp(state.happiness + happinessDelta, 0, 100);
+
+      // Build log entries
       let newLog = state.log;
 
-      // Expense log
       if (canAfford) {
         newLog = addLog(newLog, monthName, newYear,
           `You paid $${expenses} in living expenses (${tier.name}).`, 'info');
       } else {
         newLog = addLog(newLog, monthName, newYear,
-          `Can't cover $${expenses} expenses! Paid $${actualExpenses}. Health suffers.`, 'danger');
+          `Can't cover $${expenses} expenses! Paid $${actualExpenses}. Health and mood suffer.`, 'danger');
       }
 
-      // Rent detail
       newLog = addLog(newLog, monthName, newYear,
         `Rent: $${tier.rent} | Food: $${tier.food} | Misc: $${tier.misc}`, 'dim');
 
-      // Market events
       for (const evt of marketEvents) {
         newLog = addLog(newLog, monthName, newYear, evt.text, evt.type);
       }
 
-      // Birthday
       if (newAge !== state.age) {
         newLog = addLog(newLog, monthName, newYear,
           `Happy Birthday! You turned ${newAge}.`, 'success');
       }
 
-      // Health warnings
       if (newHealth <= 20 && newHealth > 0) {
         newLog = addLog(newLog, monthName, newYear,
           `Health critical at ${newHealth}%! Consider resting.`, 'danger');
       }
-
-      // Broke warning
+      if (newHappiness <= 20 && newHappiness > 0) {
+        newLog = addLog(newLog, monthName, newYear,
+          `Happiness dropping (${newHappiness}%). Do something fun!`, 'danger');
+      }
       if (newCash <= 0) {
         newLog = addLog(newLog, monthName, newYear,
           `You're broke! Find work fast.`, 'danger');
       }
 
-      return {
+      // Random event every 3 months
+      const newMonthsSince = state.monthsSinceEvent + 1;
+      let pendingEvent = null;
+      let monthsSinceEvent = newMonthsSince;
+      if (newMonthsSince >= 3) {
+        // Signal to App that it should roll an event
+        pendingEvent = '__ROLL__';
+        monthsSinceEvent = 0;
+      }
+
+      const next = {
         ...state,
         month: newMonth,
         year: newYear,
         age: newAge,
         cash: newCash,
         health: newHealth,
+        happiness: newHappiness,
         stocks: newStocks,
         log: newLog,
+        monthsSinceEvent: monthsSinceEvent,
+        pendingEvent,
       };
+
+      return checkGameOver(next);
+    }
+
+    case 'SET_PENDING_EVENT':
+      return { ...state, pendingEvent: action.event };
+
+    case 'RESOLVE_EVENT': {
+      const { choice } = action;
+      const monthName = MONTHS[state.month];
+      let newCash = state.cash;
+      let newHealth = state.health;
+      let newHappiness = state.happiness;
+      let newPortfolio = { ...state.portfolio };
+      let newLog = state.log;
+
+      const fx = choice.effects;
+
+      // Handle gamble specially
+      if (fx.gamble) {
+        const won = Math.random() < 0.4; // 40% chance to win
+        if (won) {
+          newCash = +(newCash + fx.gamble).toFixed(2);
+          newHappiness = clamp(newHappiness + 20, 0, 100);
+          newLog = addLog(newLog, monthName, state.year, `Gambled $${fx.gamble} and WON! Doubled your money!`, 'success');
+        } else {
+          newCash = +(newCash - fx.gamble).toFixed(2);
+          newHappiness = clamp(newHappiness - 10, 0, 100);
+          newLog = addLog(newLog, monthName, state.year, `Gambled $${fx.gamble} and LOST it all! Scammed!`, 'danger');
+        }
+      } else {
+        // Standard effects
+        if (fx.cash) newCash = +(newCash + fx.cash).toFixed(2);
+        if (fx.health) newHealth = clamp(newHealth + fx.health, 0, 100);
+        if (fx.happiness) newHappiness = clamp(newHappiness + fx.happiness, 0, 100);
+
+        // Stock purchase from event
+        if (fx.buyStock) {
+          const { companyId, qty } = fx.buyStock;
+          const cost = +(state.stocks[companyId].price * qty).toFixed(2);
+          if (cost <= newCash) {
+            newCash = +(newCash - cost).toFixed(2);
+            newPortfolio = { ...newPortfolio, [companyId]: newPortfolio[companyId] + qty };
+          }
+        }
+
+        if (choice.logText) {
+          const logType = (fx.happiness && fx.happiness > 0) || (fx.health && fx.health > 0) || (fx.cash && fx.cash > 0)
+            ? 'success'
+            : (fx.health && fx.health < 0) || (fx.happiness && fx.happiness < 0) || (fx.cash && fx.cash < 0)
+              ? 'danger'
+              : 'info';
+          newLog = addLog(newLog, monthName, state.year, choice.logText, logType);
+        }
+      }
+
+      newCash = Math.max(0, newCash);
+
+      const next = {
+        ...state,
+        cash: newCash,
+        health: newHealth,
+        happiness: newHappiness,
+        portfolio: newPortfolio,
+        log: newLog,
+        pendingEvent: null,
+      };
+
+      return checkGameOver(next);
     }
 
     case 'SET_LIFESTYLE':
@@ -153,8 +259,13 @@ export function gameReducer(state, action) {
     }
 
     case 'UPDATE_HEALTH': {
-      const newHealth = Math.max(0, Math.min(100, state.health + action.amount));
-      return { ...state, health: newHealth };
+      const newHealth = clamp(state.health + action.amount, 0, 100);
+      return checkGameOver({ ...state, health: newHealth });
+    }
+
+    case 'UPDATE_HAPPINESS': {
+      const newHappiness = clamp(state.happiness + action.amount, 0, 100);
+      return checkGameOver({ ...state, happiness: newHappiness });
     }
 
     case 'BUY_STOCK': {
