@@ -12,7 +12,7 @@ export function initStocks() {
     stocks[co.id] = {
       price: co.basePrice,
       history: [co.basePrice],
-      trend: 0,       // -1 bear, 0 neutral, +1 bull — shifts randomly
+      trend: 0,
     };
   }
   return stocks;
@@ -26,57 +26,55 @@ export function initPortfolio() {
   return portfolio;
 }
 
-// Seeded-ish randomness so results feel organic but are deterministic per call
 function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
 
 /**
  * Simulate one month of price movement for every stock.
- * Returns new stocks object (immutable update).
+ * Returns { stocks, events } where events is an array of log-worthy strings.
  */
 export function tickStocks(stocks) {
   const next = {};
+  const events = [];
 
   for (const co of COMPANIES) {
     const prev = stocks[co.id];
     const price = prev.price;
 
-    // Possibly shift trend
     let trend = prev.trend;
     if (Math.random() < 0.25) {
-      trend = Math.floor(Math.random() * 3) - 1; // -1, 0, +1
+      trend = Math.floor(Math.random() * 3) - 1;
     }
 
-    // Base volatility: ±15 %
     const volatility = randomBetween(-0.15, 0.15);
-
-    // Trend bias: adds up to ±8 %
     const trendBias = trend * randomBetween(0.02, 0.08);
 
-    // Rare event: 8 % chance of a ±20-40 % shock
     let shock = 0;
+    let shockType = null;
     if (Math.random() < 0.08) {
-      shock = (Math.random() < 0.5 ? 1 : -1) * randomBetween(0.20, 0.40);
+      const direction = Math.random() < 0.5 ? 1 : -1;
+      shock = direction * randomBetween(0.20, 0.40);
+      shockType = direction > 0 ? 'boom' : 'crash';
     }
 
-    // Mean reversion: gentle pull toward base price
     const reversion = (co.basePrice - price) / co.basePrice * 0.05;
-
     const change = volatility + trendBias + shock + reversion;
     const newPrice = Math.max(1, +(price * (1 + change)).toFixed(2));
-
-    const history = [...prev.history, newPrice].slice(-12); // keep last 12 months
+    const history = [...prev.history, newPrice].slice(-12);
 
     next[co.id] = { price: newPrice, history, trend };
+
+    if (shockType === 'crash') {
+      events.push({ type: 'danger', text: `Market Crash! ${co.ticker} plunges ${Math.abs(Math.round(change * 100))}%!` });
+    } else if (shockType === 'boom') {
+      events.push({ type: 'success', text: `${co.ticker} surges ${Math.round(change * 100)}%! Bull run!` });
+    }
   }
 
-  return next;
+  return { stocks: next, events };
 }
 
-/**
- * Calculate total portfolio value at current prices.
- */
 export function portfolioValue(portfolio, stocks) {
   let total = 0;
   for (const co of COMPANIES) {
