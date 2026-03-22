@@ -1,10 +1,10 @@
 export const COMPANIES = [
-  { id: 'comcom',  name: 'Commodore Computing', ticker: 'CMDC', sector: 'Tech',           basePrice: 24 },
-  { id: 'vhsmax',  name: 'VHS-Max',             ticker: 'VHSM', sector: 'Entertainment',  basePrice: 15 },
-  { id: 'aerodyn', name: 'Aero-Dynamics',        ticker: 'AERO', sector: 'Aerospace',      basePrice: 42 },
-  { id: 'neonola', name: 'Neon-Cola',            ticker: 'NCLA', sector: 'Consumer Goods',  basePrice: 8  },
-  { id: 'synwav',  name: 'SynthWave Records',    ticker: 'SYNW', sector: 'Music',           basePrice: 12 },
-  { id: 'glopet',  name: 'Global Petro',         ticker: 'GPET', sector: 'Energy',          basePrice: 35 },
+  { id: 'neonola', name: 'Neon-Cola',            ticker: 'NCLA', sector: 'Consumer Goods',  basePrice: 8,  repRequired: 0  },
+  { id: 'synwav',  name: 'SynthWave Records',    ticker: 'SYNW', sector: 'Music',           basePrice: 12, repRequired: 0  },
+  { id: 'comcom',  name: 'Commodore Computing', ticker: 'CMDC', sector: 'Tech',           basePrice: 24, repRequired: 0  },
+  { id: 'glopet',  name: 'Global Petro',         ticker: 'GPET', sector: 'Energy',          basePrice: 35, repRequired: 10 },
+  { id: 'vhsmax',  name: 'VHS-Max',             ticker: 'VHSM', sector: 'Entertainment',  basePrice: 15, repRequired: 25 },
+  { id: 'aerodyn', name: 'Aero-Dynamics',        ticker: 'AERO', sector: 'Aerospace',      basePrice: 42, repRequired: 50 },
 ];
 
 export function initStocks() {

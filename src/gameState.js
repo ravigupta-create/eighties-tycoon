@@ -48,7 +48,10 @@ export const INITIAL_STATE = {
   // Real estate
   properties: initProperties(),
   // Career
-  career: initCareer(), // { rankIndex, promotionMeter }
+  career: initCareer(),
+  // Luxury / Reputation
+  reputation: 0,
+  luxuryItems: [], // array of item IDs owned
 };
 
 let logIdCounter = 0;
@@ -435,6 +438,22 @@ export function gameReducer(state, action) {
         cash: +(state.cash + salePrice).toFixed(2),
         properties: state.properties.filter((_, i) => i !== index),
         log: addLog(state.log, monthName, state.year, profitText, logType),
+      };
+    }
+
+    case 'BUY_LUXURY': {
+      const { itemId, price, reputation: repGain, happiness: happGain } = action;
+      if (price > state.cash) return state;
+      if (state.luxuryItems.includes(itemId)) return state; // already owned
+      const monthName = MONTHS[state.month];
+      return {
+        ...state,
+        cash: +(state.cash - price).toFixed(2),
+        reputation: state.reputation + repGain,
+        happiness: clamp(state.happiness + happGain, 0, 100),
+        luxuryItems: [...state.luxuryItems, itemId],
+        log: addLog(state.log, monthName, state.year,
+          `Bought luxury item! +${repGain} REP, +${happGain} JOY.`, 'success'),
       };
     }
 

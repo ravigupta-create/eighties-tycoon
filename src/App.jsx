@@ -3,6 +3,7 @@ import { INITIAL_STATE, gameReducer, getMonthName, LIFESTYLE_TIERS } from './gam
 import { COMPANIES, portfolioValue } from './stockMarket'
 import { PROPERTIES, totalPropertyValue, totalMaintenance, totalPropertyHappiness } from './realEstate'
 import { CAREER_RANKS, getRank, isMaxRank, workHardAmount, workHardHealthCost } from './career'
+import { LUXURY_ITEMS, getReputationTier, getNextReputationTier } from './luxuryShop'
 import { rollRandomEvent } from './randomEvents'
 import { saveGame, loadGame, deleteSave, hasSave, saveSettings, loadSettings } from './saveLoad'
 import {
@@ -242,6 +243,9 @@ function GameOverScreen({ state, dispatch, onNewLife }) {
               <p className="text-amber">
                 <span className="text-amber-dim">CAREER: </span>{getRank(state.career?.rankIndex || 0).name}
               </p>
+              <p className="text-amber">
+                <span className="text-amber-dim">REP: </span>{state.reputation || 0} ({getReputationTier(state.reputation || 0).label})
+              </p>
             </div>
           </div>
         </div>
@@ -370,7 +374,10 @@ function StockRow({ company, stockData, owned, cash, dispatch }) {
 /* ── Portfolio Tab ── */
 function PortfolioPanel({ state, dispatch }) {
   const totalValue = portfolioValue(state.portfolio, state.stocks)
-  const netWorth = +(state.cash + totalValue).toFixed(2)
+  const propValue = totalPropertyValue(state.properties || [])
+  const netWorth = +(state.cash + totalValue + propValue).toFixed(2)
+  const rep = state.reputation || 0;
+
   return (
     <div>
       <div className="border border-crt-border rounded p-3 mb-3 flex flex-wrap gap-4 justify-between text-sm">
@@ -378,10 +385,27 @@ function PortfolioPanel({ state, dispatch }) {
         <span className="text-amber"><span className="text-amber-dim">HOLDINGS: </span>${totalValue.toLocaleString()}</span>
         <span className="text-phosphor text-glow"><span className="text-phosphor-dim">NET WORTH: </span>${netWorth.toLocaleString()}</span>
       </div>
-      {COMPANIES.map((co) => (
-        <StockRow key={co.id} company={co} stockData={state.stocks[co.id]}
-          owned={state.portfolio[co.id]} cash={state.cash} dispatch={dispatch} />
-      ))}
+      {COMPANIES.map((co) => {
+        const locked = (co.repRequired || 0) > rep;
+        if (locked) {
+          return (
+            <div key={co.id} className="border border-crt-border rounded p-3 mb-2 opacity-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-phosphor-dim font-bold text-sm">🔒 {co.ticker}</span>
+                  <span className="text-phosphor-dim text-xs">{co.name}</span>
+                </div>
+                <span className="text-amber-dim text-xs">REQ: {co.repRequired} REP</span>
+              </div>
+              <p className="text-phosphor-dim text-xs mt-1">Build reputation in the Luxury Shop to unlock.</p>
+            </div>
+          );
+        }
+        return (
+          <StockRow key={co.id} company={co} stockData={state.stocks[co.id]}
+            owned={state.portfolio[co.id]} cash={state.cash} dispatch={dispatch} />
+        );
+      })}
     </div>
   )
 }
@@ -586,7 +610,22 @@ function RealEstatePanel({ state, dispatch }) {
         <p className="text-phosphor-dim text-xs mb-3">═══ PROPERTIES FOR SALE ═══</p>
         <div className="flex flex-col gap-2">
           {PROPERTIES.map((prop) => {
-            const canBuy = state.cash >= prop.basePrice;
+            const rep = state.reputation || 0;
+            const locked = (prop.repRequired || 0) > rep;
+            const canBuy = state.cash >= prop.basePrice && !locked;
+
+            if (locked) {
+              return (
+                <div key={prop.id} className="border border-crt-border rounded p-3 opacity-50">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-phosphor-dim font-bold text-sm">🔒 {prop.name.toUpperCase()}</span>
+                    <span className="text-amber-dim text-xs">REQ: {prop.repRequired} REP</span>
+                  </div>
+                  <p className="text-phosphor-dim text-xs">Build reputation in the Luxury Shop to unlock.</p>
+                </div>
+              );
+            }
+
             return (
               <div key={prop.id} className="border border-crt-border rounded p-3">
                 <div className="flex items-center justify-between mb-1">
@@ -655,6 +694,107 @@ function RealEstatePanel({ state, dispatch }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Luxury Shop Panel ── */
+function LuxuryShopPanel({ state, dispatch }) {
+  const rep = state.reputation || 0;
+  const owned = state.luxuryItems || [];
+  const tier = getReputationTier(rep);
+  const nextTier = getNextReputationTier(rep);
+
+  // Group items by tier
+  const tiers = [1, 2, 3];
+  const tierLabels = { 1: 'STARTER FLEX', 2: 'MID-LEVEL STATUS', 3: 'HIGH ROLLER' };
+
+  return (
+    <div>
+      {/* Reputation Summary */}
+      <div className="border border-crt-border rounded p-3 mb-3">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-phosphor-dim text-xs">═══ REPUTATION ═══</span>
+          <span className={`text-${tier.color} text-sm font-bold`}>{tier.label.toUpperCase()}</span>
+        </div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-phosphor text-lg">{rep} REP</span>
+          {nextTier && (
+            <span className="text-phosphor-dim text-xs">
+              Next: <span className={`text-${nextTier.color}`}>{nextTier.label}</span> at {nextTier.minRep}
+            </span>
+          )}
+        </div>
+        {nextTier && (
+          <div className="w-full bg-crt-bg rounded h-2 border border-crt-border overflow-hidden">
+            <div className="h-full bg-amber transition-all duration-500"
+              style={{
+                width: `${Math.min(100, Math.round((rep / nextTier.minRep) * 100))}%`,
+                boxShadow: '0 0 4px #ffb000',
+              }} />
+          </div>
+        )}
+        <p className="text-phosphor-dim text-[10px] mt-2">
+          ITEMS OWNED: <span className="text-phosphor">{owned.length}/{LUXURY_ITEMS.length}</span>
+          {' | '}REP unlocks better stocks, properties, and investments.
+        </p>
+      </div>
+
+      {/* Shop Items by Tier */}
+      {tiers.map((t) => {
+        const items = LUXURY_ITEMS.filter(i => i.tier === t);
+        return (
+          <div key={t} className="border border-crt-border rounded p-3 mb-3">
+            <p className="text-amber-dim text-xs mb-2">═══ {tierLabels[t]} ═══</p>
+            <div className="flex flex-col gap-2">
+              {items.map((item) => {
+                const isOwned = owned.includes(item.id);
+                const canAfford = state.cash >= item.price;
+
+                return (
+                  <div key={item.id} className={`border rounded p-3 ${isOwned ? 'border-phosphor bg-crt-bg/50' : 'border-crt-border'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`font-bold text-sm ${isOwned ? 'text-phosphor' : 'text-amber'}`}>
+                        {item.icon} {item.name.toUpperCase()}
+                      </span>
+                      {isOwned ? (
+                        <span className="text-phosphor text-xs font-bold">✓ OWNED</span>
+                      ) : (
+                        <span className="text-phosphor text-sm">${item.price.toLocaleString()}</span>
+                      )}
+                    </div>
+                    <p className="text-phosphor-dim text-xs mb-2">{item.description}</p>
+                    <div className="flex items-center justify-between mb-2 text-[10px]">
+                      <span className="text-amber">+{item.reputation} REP</span>
+                      <span className="text-[#00ffff]">+{item.happiness} JOY</span>
+                      <span className="text-phosphor-dim">PERMANENT</span>
+                    </div>
+                    {!isOwned && (
+                      <button
+                        disabled={!canAfford}
+                        onClick={() => {
+                          sfxCashOut();
+                          sfxBuy();
+                          dispatch({
+                            type: 'BUY_LUXURY',
+                            itemId: item.id,
+                            price: item.price,
+                            reputation: item.reputation,
+                            happiness: item.happiness,
+                          });
+                        }}
+                        className="w-full bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-xs px-3 py-1.5 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_6px_rgba(255,176,0,0.2)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        BUY FOR ${item.price.toLocaleString()}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -855,6 +995,7 @@ function GameScreen({ state, dispatch, onNewLife }) {
                 <div className="flex items-center gap-3 text-sm">
                   <span className="text-amber">{getMonthName(state.month)} {state.year}</span>
                   <span className="text-phosphor-dim">AGE {state.age}</span>
+                  <span className="text-amber-dim">{state.reputation || 0} REP</span>
                   <span className="text-phosphor">${netWorth.toLocaleString()}</span>
                   <button onClick={() => { sfxClick(); setShowSettings(true); }}
                     className="text-phosphor-dim hover:text-phosphor transition-colors cursor-pointer text-lg leading-none" title="Settings"
@@ -884,12 +1025,14 @@ function GameScreen({ state, dispatch, onNewLife }) {
               {tabBtn('status', '[ STATUS ]')}
               {tabBtn('portfolio', '[ PORTFOLIO ]')}
               {tabBtn('realestate', '[ REAL ESTATE ]')}
+              {tabBtn('luxury', '[ LUXURY ]')}
             </div>
 
             <div className="p-4">
               {tab === 'status' && <StatusPanel state={state} dispatch={dispatch} />}
               {tab === 'portfolio' && <PortfolioPanel state={state} dispatch={dispatch} />}
               {tab === 'realestate' && <RealEstatePanel state={state} dispatch={dispatch} />}
+              {tab === 'luxury' && <LuxuryShopPanel state={state} dispatch={dispatch} />}
             </div>
           </div>
         </div>

@@ -12,8 +12,9 @@ export const PROPERTIES = [
     basePrice: 800,
     maintenance: 30,
     happinessBonus: 3,
-    appreciationRate: 0.003,  // ~0.3% per month (~3.7% yearly)
+    appreciationRate: 0.003,
     icon: '▪',
+    repRequired: 0,
   },
   {
     id: 'suburban',
@@ -22,8 +23,9 @@ export const PROPERTIES = [
     basePrice: 3500,
     maintenance: 80,
     happinessBonus: 7,
-    appreciationRate: 0.005,  // ~0.5% per month (~6.2% yearly)
+    appreciationRate: 0.005,
     icon: '▣',
+    repRequired: 25,
   },
   {
     id: 'penthouse',
@@ -32,8 +34,9 @@ export const PROPERTIES = [
     basePrice: 12000,
     maintenance: 200,
     happinessBonus: 15,
-    appreciationRate: 0.008,  // ~0.8% per month (~10% yearly)
+    appreciationRate: 0.008,
     icon: '▲',
+    repRequired: 50,
   },
 ];
 
