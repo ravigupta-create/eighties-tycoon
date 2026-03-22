@@ -78,6 +78,20 @@ body {
   animation: textGlow 3s ease-in-out infinite;
 }
 
+/* News ticker scroll */
+@keyframes tickerScroll {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.ticker-scroll {
+  animation: tickerScroll 18s linear infinite;
+}
+
+.ticker-scroll:hover {
+  animation-play-state: paused;
+}
+
 .log-scroll::-webkit-scrollbar {
   width: 6px;
 }

@@ -4,6 +4,7 @@ export const COMPANIES = [
   { id: 'aerodyn', name: 'Aero-Dynamics',        ticker: 'AERO', sector: 'Aerospace',      basePrice: 42 },
   { id: 'neonola', name: 'Neon-Cola',            ticker: 'NCLA', sector: 'Consumer Goods',  basePrice: 8  },
   { id: 'synwav',  name: 'SynthWave Records',    ticker: 'SYNW', sector: 'Music',           basePrice: 12 },
+  { id: 'glopet',  name: 'Global Petro',         ticker: 'GPET', sector: 'Energy',          basePrice: 35 },
 ];
 
 export function initStocks() {
@@ -32,15 +33,28 @@ function randomBetween(min, max) {
 
 /**
  * Simulate one month of price movement for every stock.
- * Returns { stocks, events } where events is an array of log-worthy strings.
+ * newsStockEffects: optional { companyId: multiplier } from news headlines
+ * Returns { stocks, events }
  */
-export function tickStocks(stocks) {
+export function tickStocks(stocks, newsStockEffects = {}) {
   const next = {};
   const events = [];
 
   for (const co of COMPANIES) {
     const prev = stocks[co.id];
-    const price = prev.price;
+    let price = prev.price;
+
+    // Apply news headline effect FIRST (direct price shock)
+    if (newsStockEffects[co.id]) {
+      const newsMult = newsStockEffects[co.id];
+      price = Math.max(1, +(price * newsMult).toFixed(2));
+      const pctChange = Math.round((newsMult - 1) * 100);
+      if (pctChange < -10) {
+        events.push({ type: 'danger', text: `NEWS IMPACT: ${co.ticker} drops ${Math.abs(pctChange)}%!` });
+      } else if (pctChange > 10) {
+        events.push({ type: 'success', text: `NEWS IMPACT: ${co.ticker} jumps +${pctChange}%!` });
+      }
+    }
 
     let trend = prev.trend;
     if (Math.random() < 0.25) {

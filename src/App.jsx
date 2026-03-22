@@ -7,6 +7,7 @@ import {
   sfxClick, sfxNextMonth, sfxCashIn, sfxCashOut, sfxBuy, sfxSell,
   sfxEvent, sfxChoice, sfxWarning, sfxGameOver, sfxStart, sfxSave,
   sfxReset, sfxTab, sfxWork, sfxCrash, sfxBoom, sfxBirthday,
+  sfxNewsTicker,
   setMuted, isMuted, setVolume, getVolume,
 } from './sounds'
 import './App.css'
@@ -389,6 +390,11 @@ function StatusPanel({ state, dispatch }) {
         <p className="text-phosphor-dim text-xs mt-2">
           LIFESTYLE: <span className="text-amber">{tier.name.toUpperCase()}</span>
           <span className="text-phosphor-dim"> — ${totalExp}/mo</span>
+          {state.expenseMultiplier !== 1.0 && state.expenseMultiplierExpiry > 0 && (
+            <span className={state.expenseMultiplier > 1 ? 'text-danger' : 'text-phosphor'}>
+              {' '}({state.expenseMultiplier > 1 ? '+' : ''}{Math.round((state.expenseMultiplier - 1) * 100)}% for {state.expenseMultiplierExpiry}mo)
+            </span>
+          )}
         </p>
       </div>
 
@@ -448,6 +454,36 @@ function LifeLog({ log }) {
   )
 }
 
+/* ── News Ticker ── */
+function NewsTicker({ headline, sentiment, expenseMultiplier, expenseMultiplierExpiry }) {
+  const borderColor = sentiment === 'positive' ? 'border-phosphor' : sentiment === 'negative' ? 'border-danger' : 'border-amber';
+  const textColor = sentiment === 'positive' ? 'text-phosphor' : sentiment === 'negative' ? 'text-danger' : 'text-amber';
+  const glowColor = sentiment === 'positive' ? 'rgba(51,255,51,0.15)' : sentiment === 'negative' ? 'rgba(255,51,51,0.15)' : 'rgba(255,176,0,0.15)';
+  const label = sentiment === 'positive' ? 'GOOD NEWS' : sentiment === 'negative' ? 'BREAKING' : 'NEWS FLASH';
+
+  return (
+    <div className={`bg-crt-dark border ${borderColor} rounded-lg overflow-hidden shadow-[0_0_15px_${glowColor}] mb-4`}>
+      <div className="flex items-center">
+        {/* Label badge */}
+        <div className={`px-3 py-2 ${sentiment === 'positive' ? 'bg-phosphor/10' : sentiment === 'negative' ? 'bg-danger/10' : 'bg-amber/10'} border-r ${borderColor} flex-shrink-0`}>
+          <span className={`${textColor} text-[10px] font-bold tracking-widest`}>{label}</span>
+        </div>
+        {/* Scrolling headline */}
+        <div className="flex-1 overflow-hidden py-2 px-2">
+          <p className={`${textColor} text-xs font-bold whitespace-nowrap ticker-scroll`}>
+            ★ {headline} ★
+            {expenseMultiplier !== 1.0 && expenseMultiplierExpiry > 0 && (
+              <span className="text-amber-dim ml-6">
+                | COST OF LIVING: {expenseMultiplier > 1 ? '+' : ''}{Math.round((expenseMultiplier - 1) * 100)}% ({expenseMultiplierExpiry}mo remaining)
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Game Screen ── */
 function GameScreen({ state, dispatch, onNewLife }) {
   const [tab, setTab] = useState('status')
@@ -473,6 +509,15 @@ function GameScreen({ state, dispatch, onNewLife }) {
     }
     prevLogLen.current = state.log.length;
   }, [state.log.length]);
+
+  // News ticker sound on headline change
+  const prevHeadline = useRef(state.currentHeadline?.headline);
+  useEffect(() => {
+    if (state.currentHeadline && state.currentHeadline.headline !== prevHeadline.current) {
+      sfxNewsTicker(state.currentHeadline.sentiment);
+      prevHeadline.current = state.currentHeadline.headline;
+    }
+  }, [state.currentHeadline]);
 
   // Handle __ROLL__ sentinel
   useEffect(() => {
@@ -583,7 +628,18 @@ function GameScreen({ state, dispatch, onNewLife }) {
         />
       )}
 
-      <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-4">
+      <div className="max-w-6xl mx-auto">
+        {/* News Ticker */}
+        {state.currentHeadline && (
+          <NewsTicker
+            headline={state.currentHeadline.headline}
+            sentiment={state.currentHeadline.sentiment}
+            expenseMultiplier={state.expenseMultiplier}
+            expenseMultiplierExpiry={state.expenseMultiplierExpiry}
+          />
+        )}
+
+        <div className="flex flex-col lg:flex-row gap-4">
         <div className="flex-1 min-w-0">
           <div className="crt-screen bg-crt-dark border-2 border-crt-border rounded-lg shadow-[0_0_30px_rgba(51,255,51,0.1)]">
             {/* Header */}
@@ -634,6 +690,7 @@ function GameScreen({ state, dispatch, onNewLife }) {
           <div className="lg:sticky lg:top-4 h-[calc(100vh-2rem)]">
             <LifeLog log={state.log} />
           </div>
+        </div>
         </div>
       </div>
     </div>

@@ -196,3 +196,18 @@ export function sfxBirthday() {
     setTimeout(() => playTone(f, 0.15, 'triangle'), i * 150);
   });
 }
+
+// News ticker — teletype clatter
+export function sfxNewsTicker(sentiment) {
+  if (muted) return;
+  // Quick staccato "clack clack clack" like a teletype
+  for (let i = 0; i < 4; i++) {
+    setTimeout(() => playNoise(0.03, 0.06), i * 50);
+  }
+  // Then a tone based on sentiment
+  setTimeout(() => {
+    if (sentiment === 'positive') playTone(880, 0.12, 'sine');
+    else if (sentiment === 'negative') playTone(220, 0.15, 'sawtooth');
+    else playTone(440, 0.1, 'triangle');
+  }, 220);
+}

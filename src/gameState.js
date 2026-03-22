@@ -1,4 +1,5 @@
 import { initStocks, initPortfolio, tickStocks } from './stockMarket'
+import { rollHeadline, resetHeadlineHistory } from './newsHeadlines'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -36,7 +37,12 @@ export const INITIAL_STATE = {
   portfolio: initPortfolio(),
   log: [],
   monthsSinceEvent: 0,
-  pendingEvent: null, // { prompt, choices }
+  pendingEvent: null,
+  // News system
+  currentHeadline: null,    // { headline, sentiment }
+  expenseMultiplier: 1.0,   // current multiplier on living costs
+  expenseMultiplierExpiry: 0, // months remaining for expense effect
+  headlineHistory: [],      // last 5 headlines for display
 };
 
 let logIdCounter = 0;
@@ -76,7 +82,6 @@ export function gameReducer(state, action) {
       };
 
     case 'ADVANCE_MONTH': {
-      // Block if there's a pending event
       if (state.pendingEvent) return state;
 
       const nextMonthIdx = state.month + 1;
@@ -91,12 +96,35 @@ export function gameReducer(state, action) {
         newAge = state.age + 1;
       }
 
-      // Tick stocks
-      const { stocks: newStocks, events: marketEvents } = tickStocks(state.stocks);
+      // ── Roll news headline ──
+      const news = rollHeadline();
 
-      // Deduct living expenses
+      // ── Tick stocks with news effects ──
+      const { stocks: newStocks, events: marketEvents } = tickStocks(state.stocks, news.stockEffects);
+
+      // ── Expense multiplier management ──
+      let expMult = state.expenseMultiplier;
+      let expExpiry = state.expenseMultiplierExpiry;
+
+      // Decrement existing effect
+      if (expExpiry > 0) {
+        expExpiry -= 1;
+        if (expExpiry <= 0) {
+          expMult = 1.0; // effect expired
+          expExpiry = 0;
+        }
+      }
+
+      // Apply new headline expense effect (overwrites if stronger or new)
+      if (news.expenseEffect) {
+        expMult = news.expenseEffect.multiplier;
+        expExpiry = news.expenseEffect.duration;
+      }
+
+      // ── Deduct living expenses (with multiplier) ──
       const tier = getTier(state.lifestyleTier);
-      const expenses = totalExpenses(tier);
+      const baseExpenses = totalExpenses(tier);
+      const expenses = Math.round(baseExpenses * expMult);
       const canAfford = state.cash >= expenses;
       const actualExpenses = canAfford ? expenses : state.cash;
       let newCash = +(state.cash - actualExpenses).toFixed(2);
@@ -104,26 +132,46 @@ export function gameReducer(state, action) {
       // Health effects from lifestyle
       let healthDelta = -tier.healthDrain;
       if (!canAfford) healthDelta = -8;
-      const newHealth = clamp(state.health + healthDelta, 0, 100);
+      healthDelta += news.healthEffect;
+      let newHealth = clamp(state.health + healthDelta, 0, 100);
 
-      // Happiness drift: budget lifestyle slowly drains happiness
+      // Happiness drift
       let happinessDelta = 0;
       if (state.lifestyleTier === 'budget') happinessDelta = -2;
       else if (state.lifestyleTier === 'standard') happinessDelta = 0;
       else if (state.lifestyleTier === 'upscale') happinessDelta = 1;
       else if (state.lifestyleTier === 'luxury') happinessDelta = 3;
       if (!canAfford) happinessDelta -= 5;
-      const newHappiness = clamp(state.happiness + happinessDelta, 0, 100);
+      happinessDelta += news.happinessEffect;
+      let newHappiness = clamp(state.happiness + happinessDelta, 0, 100);
 
-      // Build log entries
+      // ── Build log entries ──
       let newLog = state.log;
+
+      // News headline log
+      const newsLogType = news.sentiment === 'positive' ? 'success' : news.sentiment === 'negative' ? 'danger' : 'info';
+      newLog = addLog(newLog, monthName, newYear, `NEWS: ${news.headline}`, newsLogType);
+
+      // Expense effect log
+      if (news.expenseEffect) {
+        const pct = Math.round((news.expenseEffect.multiplier - 1) * 100);
+        const dir = pct > 0 ? 'up' : 'down';
+        newLog = addLog(newLog, monthName, newYear,
+          `Living costs ${dir} ${Math.abs(pct)}% for ${news.expenseEffect.duration} months.`,
+          pct > 0 ? 'danger' : 'success');
+      }
+
+      // Expense log
+      const expenseLabel = expMult !== 1.0
+        ? `$${expenses} (${expMult > 1 ? '+' : ''}${Math.round((expMult - 1) * 100)}%)`
+        : `$${expenses}`;
 
       if (canAfford) {
         newLog = addLog(newLog, monthName, newYear,
-          `You paid $${expenses} in living expenses (${tier.name}).`, 'info');
+          `You paid ${expenseLabel} in living expenses (${tier.name}).`, 'info');
       } else {
         newLog = addLog(newLog, monthName, newYear,
-          `Can't cover $${expenses} expenses! Paid $${actualExpenses}. Health and mood suffer.`, 'danger');
+          `Can't cover ${expenseLabel} expenses! Paid $${actualExpenses}. Health and mood suffer.`, 'danger');
       }
 
       newLog = addLog(newLog, monthName, newYear,
@@ -134,21 +182,17 @@ export function gameReducer(state, action) {
       }
 
       if (newAge !== state.age) {
-        newLog = addLog(newLog, monthName, newYear,
-          `Happy Birthday! You turned ${newAge}.`, 'success');
+        newLog = addLog(newLog, monthName, newYear, `Happy Birthday! You turned ${newAge}.`, 'success');
       }
 
       if (newHealth <= 20 && newHealth > 0) {
-        newLog = addLog(newLog, monthName, newYear,
-          `Health critical at ${newHealth}%! Consider resting.`, 'danger');
+        newLog = addLog(newLog, monthName, newYear, `Health critical at ${newHealth}%! Consider resting.`, 'danger');
       }
       if (newHappiness <= 20 && newHappiness > 0) {
-        newLog = addLog(newLog, monthName, newYear,
-          `Happiness dropping (${newHappiness}%). Do something fun!`, 'danger');
+        newLog = addLog(newLog, monthName, newYear, `Happiness dropping (${newHappiness}%). Do something fun!`, 'danger');
       }
       if (newCash <= 0) {
-        newLog = addLog(newLog, monthName, newYear,
-          `You're broke! Find work fast.`, 'danger');
+        newLog = addLog(newLog, monthName, newYear, `You're broke! Find work fast.`, 'danger');
       }
 
       // Random event every 3 months
@@ -156,10 +200,15 @@ export function gameReducer(state, action) {
       let pendingEvent = null;
       let monthsSinceEvent = newMonthsSince;
       if (newMonthsSince >= 3) {
-        // Signal to App that it should roll an event
         pendingEvent = '__ROLL__';
         monthsSinceEvent = 0;
       }
+
+      // Headline history (keep last 5)
+      const headlineHistory = [
+        { headline: news.headline, sentiment: news.sentiment, monthName, year: newYear },
+        ...state.headlineHistory,
+      ].slice(0, 5);
 
       const next = {
         ...state,
@@ -173,6 +222,10 @@ export function gameReducer(state, action) {
         log: newLog,
         monthsSinceEvent: monthsSinceEvent,
         pendingEvent,
+        currentHeadline: { headline: news.headline, sentiment: news.sentiment },
+        expenseMultiplier: expMult,
+        expenseMultiplierExpiry: expExpiry,
+        headlineHistory,
       };
 
       return checkGameOver(next);
@@ -192,9 +245,8 @@ export function gameReducer(state, action) {
 
       const fx = choice.effects;
 
-      // Handle gamble specially
       if (fx.gamble) {
-        const won = Math.random() < 0.4; // 40% chance to win
+        const won = Math.random() < 0.4;
         if (won) {
           newCash = +(newCash + fx.gamble).toFixed(2);
           newHappiness = clamp(newHappiness + 20, 0, 100);
@@ -205,12 +257,10 @@ export function gameReducer(state, action) {
           newLog = addLog(newLog, monthName, state.year, `Gambled $${fx.gamble} and LOST it all! Scammed!`, 'danger');
         }
       } else {
-        // Standard effects
         if (fx.cash) newCash = +(newCash + fx.cash).toFixed(2);
         if (fx.health) newHealth = clamp(newHealth + fx.health, 0, 100);
         if (fx.happiness) newHappiness = clamp(newHappiness + fx.happiness, 0, 100);
 
-        // Stock purchase from event
         if (fx.buyStock) {
           const { companyId, qty } = fx.buyStock;
           const cost = +(state.stocks[companyId].price * qty).toFixed(2);
@@ -295,7 +345,6 @@ export function gameReducer(state, action) {
 
     case 'LOAD_SAVE': {
       const saved = action.state;
-      // Restore logIdCounter to avoid id collisions
       if (saved.log && saved.log.length > 0) {
         logIdCounter = Math.max(...saved.log.map(e => e.id), logIdCounter);
       }
@@ -304,6 +353,7 @@ export function gameReducer(state, action) {
 
     case 'RESET':
       logIdCounter = 0;
+      resetHeadlineHistory();
       return { ...INITIAL_STATE, stocks: initStocks(), portfolio: initPortfolio(), log: [] };
 
     default:
