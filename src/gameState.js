@@ -1,6 +1,7 @@
 import { initStocks, initPortfolio, tickStocks } from './stockMarket'
 import { rollHeadline, resetHeadlineHistory } from './newsHeadlines'
 import { initProperties, tickProperties, totalMaintenance, totalPropertyHappiness } from './realEstate'
+import { initCareer, getRank, isMaxRank, workHardAmount, workHardHealthCost } from './career'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -45,7 +46,9 @@ export const INITIAL_STATE = {
   expenseMultiplierExpiry: 0, // months remaining for expense effect
   headlineHistory: [],      // last 5 headlines for display
   // Real estate
-  properties: initProperties(), // array of owned property instances
+  properties: initProperties(),
+  // Career
+  career: initCareer(), // { rankIndex, promotionMeter }
 };
 
 let logIdCounter = 0;
@@ -138,10 +141,15 @@ export function gameReducer(state, action) {
       const actualExpenses = canAfford ? expenses : state.cash;
       let newCash = +(state.cash - actualExpenses).toFixed(2);
 
-      // Health effects from lifestyle
+      // ── Career salary ──
+      const rank = getRank(state.career.rankIndex);
+      newCash = +(newCash + rank.salary).toFixed(2);
+
+      // Health effects from lifestyle + career stress
       let healthDelta = -tier.healthDrain;
       if (!canAfford) healthDelta = -8;
       healthDelta += news.healthEffect;
+      healthDelta -= rank.stressDrain; // career stress
       let newHealth = clamp(state.health + healthDelta, 0, 100);
 
       // Happiness drift
@@ -186,6 +194,10 @@ export function gameReducer(state, action) {
         newLog = addLog(newLog, monthName, newYear,
           `Can't cover $${expenses} expenses! Paid $${actualExpenses}. Health and mood suffer.`, 'danger');
       }
+
+      // Salary log
+      newLog = addLog(newLog, monthName, newYear,
+        `Salary: +$${rank.salary} (${rank.name})`, 'success');
 
       newLog = addLog(newLog, monthName, newYear,
         `Rent: $${tier.rent} | Food: $${tier.food} | Misc: $${tier.misc}${propMaintenance > 0 ? ` | Property: $${propMaintenance}` : ''}`, 'dim');
@@ -357,6 +369,38 @@ export function gameReducer(state, action) {
       };
     }
 
+    case 'WORK_HARD': {
+      const monthName = MONTHS[state.month];
+      const currentRank = getRank(state.career.rankIndex);
+      const hpCost = workHardHealthCost(state.career.rankIndex);
+      const meterGain = workHardAmount(state.career.rankIndex);
+
+      let newHealth = clamp(state.health - hpCost, 0, 100);
+      let newMeter = state.career.promotionMeter + meterGain;
+      let newRankIdx = state.career.rankIndex;
+      let newLog = state.log;
+
+      // Check for promotion
+      if (!isMaxRank(newRankIdx) && currentRank.promoThreshold && newMeter >= currentRank.promoThreshold) {
+        newRankIdx += 1;
+        newMeter = 0;
+        const newRank = getRank(newRankIdx);
+        newLog = addLog(newLog, monthName, state.year,
+          `PROMOTED to ${newRank.name}! Salary: $${newRank.salary}/mo.`, 'success');
+      } else {
+        newLog = addLog(newLog, monthName, state.year,
+          `Worked hard. (-${hpCost}% HP, +${meterGain} promotion progress)`, 'info');
+      }
+
+      const next = {
+        ...state,
+        health: newHealth,
+        career: { rankIndex: newRankIdx, promotionMeter: newMeter },
+        log: newLog,
+      };
+      return checkGameOver(next);
+    }
+
     case 'BUY_PROPERTY': {
       const { propertyId, price } = action;
       if (price > state.cash) return state;
@@ -405,7 +449,7 @@ export function gameReducer(state, action) {
     case 'RESET':
       logIdCounter = 0;
       resetHeadlineHistory();
-      return { ...INITIAL_STATE, stocks: initStocks(), portfolio: initPortfolio(), properties: initProperties(), log: [] };
+      return { ...INITIAL_STATE, stocks: initStocks(), portfolio: initPortfolio(), properties: initProperties(), career: initCareer(), log: [] };
 
     default:
       return state;

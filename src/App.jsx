@@ -2,6 +2,7 @@ import { useReducer, useState, useRef, useEffect, useCallback } from 'react'
 import { INITIAL_STATE, gameReducer, getMonthName, LIFESTYLE_TIERS } from './gameState'
 import { COMPANIES, portfolioValue } from './stockMarket'
 import { PROPERTIES, totalPropertyValue, totalMaintenance, totalPropertyHappiness } from './realEstate'
+import { CAREER_RANKS, getRank, isMaxRank, workHardAmount, workHardHealthCost } from './career'
 import { rollRandomEvent } from './randomEvents'
 import { saveGame, loadGame, deleteSave, hasSave, saveSettings, loadSettings } from './saveLoad'
 import {
@@ -238,6 +239,9 @@ function GameOverScreen({ state, dispatch, onNewLife }) {
               <p className={state.happiness <= 0 ? 'text-danger' : 'text-phosphor'}>
                 <span className="text-phosphor-dim">HAPPINESS: </span>{state.happiness}%{state.happiness <= 0 && ' ✗'}
               </p>
+              <p className="text-amber">
+                <span className="text-amber-dim">CAREER: </span>{getRank(state.career?.rankIndex || 0).name}
+              </p>
             </div>
           </div>
         </div>
@@ -425,8 +429,16 @@ function StatusPanel({ state, dispatch }) {
   const tier = LIFESTYLE_TIERS.find(t => t.id === state.lifestyleTier) || LIFESTYLE_TIERS[0];
   const totalExp = tier.rent + tier.food + tier.misc;
 
+  const career = state.career || { rankIndex: 0, promotionMeter: 0 };
+  const rank = getRank(career.rankIndex);
+  const maxRank = isMaxRank(career.rankIndex);
+  const promoProgress = maxRank ? 100 : Math.min(100, Math.round((career.promotionMeter / rank.promoThreshold) * 100));
+  const hpCost = workHardHealthCost(career.rankIndex);
+  const meterGain = workHardAmount(career.rankIndex);
+
   return (
     <div className="flex flex-col gap-4">
+      {/* Player Info */}
       <div className="border border-crt-border rounded p-4">
         <p className="text-phosphor-dim text-xs mb-3">═══ PLAYER STATUS ═══</p>
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm mb-3">
@@ -448,23 +460,58 @@ function StatusPanel({ state, dispatch }) {
         </p>
       </div>
 
+      {/* Career Panel */}
+      <div className="border border-crt-border rounded p-4">
+        <p className="text-phosphor-dim text-xs mb-3">═══ CAREER ═══</p>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-amber text-sm font-bold">{rank.icon} {rank.name.toUpperCase()}</span>
+          <span className="text-phosphor text-sm">${rank.salary}/mo</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+          <span className="text-phosphor-dim">STRESS: <span className="text-danger">-{rank.stressDrain} HP/mo</span></span>
+          <span className="text-phosphor-dim">RANK: <span className="text-phosphor">{career.rankIndex + 1}/{CAREER_RANKS.length}</span></span>
+        </div>
+
+        {/* Promotion Meter */}
+        {!maxRank ? (
+          <div className="mb-3">
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-amber">PROMOTION</span>
+              <span className="text-amber">{career.promotionMeter}/{rank.promoThreshold}</span>
+            </div>
+            <div className="w-full bg-crt-bg rounded h-3 border border-crt-border overflow-hidden">
+              <div className="h-full bg-amber transition-all duration-500"
+                style={{ width: `${promoProgress}%`, boxShadow: '0 0 6px #ffb000' }} />
+            </div>
+            <p className="text-phosphor-dim text-[10px] mt-1">
+              Next: <span className="text-phosphor">{getRank(career.rankIndex + 1).name}</span>
+              <span className="text-phosphor-dim"> — ${getRank(career.rankIndex + 1).salary}/mo</span>
+            </p>
+          </div>
+        ) : (
+          <p className="text-phosphor text-xs mb-3 text-glow">★ MAX RANK ACHIEVED ★</p>
+        )}
+
+        {/* Work Hard Button */}
+        <button
+          onClick={() => { sfxWork(); dispatch({ type: 'WORK_HARD' }); }}
+          disabled={maxRank}
+          className="w-full bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_8px_rgba(255,176,0,0.2)] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >{'>'} WORK HARD (-{hpCost}% HP, +{meterGain} promo){maxRank ? ' [MAXED]' : ''}</button>
+      </div>
+
       <LifestyleSelector current={state.lifestyleTier} cash={state.cash} dispatch={dispatch} />
 
+      {/* Actions */}
       <div className="border border-crt-border rounded p-4">
         <p className="text-phosphor-dim text-xs mb-3">═══ ACTIONS ═══</p>
         <div className="flex flex-col gap-2">
-          <button onClick={() => { sfxWork(); sfxCashIn(); dispatch({ type: 'UPDATE_CASH', amount: 50 }); }}
-            className="bg-crt-bg border border-phosphor-dim text-phosphor font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-phosphor hover:shadow-[0_0_8px_rgba(51,255,51,0.2)] transition-all text-left"
-          >{'>'} WORK (+$50)</button>
           <button onClick={() => { sfxClick(); sfxCashOut(); dispatch({ type: 'UPDATE_CASH', amount: -20 }); dispatch({ type: 'UPDATE_HEALTH', amount: 10 }); }}
             className="bg-crt-bg border border-phosphor-dim text-amber font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_8px_rgba(255,176,0,0.2)] transition-all text-left"
           >{'>'} REST (-$20, +10% HP)</button>
           <button onClick={() => { sfxClick(); sfxCashOut(); dispatch({ type: 'UPDATE_CASH', amount: -30 }); dispatch({ type: 'UPDATE_HAPPINESS', amount: 12 }); }}
             className="bg-crt-bg border border-phosphor-dim text-[#00ffff] font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-[#00ffff] hover:shadow-[0_0_8px_rgba(0,255,255,0.2)] transition-all text-left"
           >{'>'} HANG OUT (-$30, +12% JOY)</button>
-          <button onClick={() => { sfxWork(); dispatch({ type: 'UPDATE_HEALTH', amount: -5 }); }}
-            className="bg-crt-bg border border-phosphor-dim text-danger font-[family-name:var(--font-crt)] text-sm px-3 py-2 rounded cursor-pointer hover:border-danger hover:shadow-[0_0_8px_rgba(255,51,51,0.2)] transition-all text-left"
-          >{'>'} HUSTLE (-5% HP)</button>
         </div>
       </div>
     </div>
