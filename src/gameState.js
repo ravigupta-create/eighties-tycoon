@@ -293,6 +293,15 @@ export function gameReducer(state, action) {
       };
     }
 
+    case 'LOAD_SAVE': {
+      const saved = action.state;
+      // Restore logIdCounter to avoid id collisions
+      if (saved.log && saved.log.length > 0) {
+        logIdCounter = Math.max(...saved.log.map(e => e.id), logIdCounter);
+      }
+      return { ...saved, pendingEvent: null };
+    }
+
     case 'RESET':
       logIdCounter = 0;
       return { ...INITIAL_STATE, stocks: initStocks(), portfolio: initPortfolio(), log: [] };
