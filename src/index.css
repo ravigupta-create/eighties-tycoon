@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@theme {
+  --color-crt-bg: #0a0a0a;
+  --color-crt-dark: #111111;
+  --color-crt-border: #1a1a1a;
+  --color-phosphor: #33ff33;
+  --color-phosphor-dim: #1a8c1a;
+  --color-phosphor-glow: rgba(51, 255, 51, 0.15);
+  --color-amber: #ffb000;
+  --color-amber-dim: #8c6000;
+  --color-amber-glow: rgba(255, 176, 0, 0.15);
+  --color-danger: #ff3333;
+  --font-crt: "Courier New", "Lucida Console", monospace;
+}
+
+/* Scanline overlay */
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.98; }
+}
+
+@keyframes textGlow {
+  0%, 100% { text-shadow: 0 0 4px var(--color-phosphor-glow), 0 0 8px var(--color-phosphor-glow); }
+  50% { text-shadow: 0 0 6px var(--color-phosphor-glow), 0 0 12px var(--color-phosphor-glow), 0 0 20px var(--color-phosphor-glow); }
+}
+
+body {
+  margin: 0;
+  background: #000;
+  font-family: var(--font-crt);
+}
+
+.crt-screen {
+  position: relative;
+  overflow: hidden;
+  animation: flicker 0.15s infinite;
+}
+
+.crt-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.15) 0px,
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+.crt-screen::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    transparent 50%,
+    rgba(51, 255, 51, 0.03) 50%
+  );
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.text-glow {
+  animation: textGlow 3s ease-in-out infinite;
+}
