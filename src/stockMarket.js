@@ -75,7 +75,7 @@ export function tickStocks(stocks, newsStockEffects = {}) {
     const reversion = (co.basePrice - price) / co.basePrice * 0.05;
     const change = volatility + trendBias + shock + reversion;
     const newPrice = Math.max(1, +(price * (1 + change)).toFixed(2));
-    const history = [...prev.history, newPrice].slice(-12);
+    const history = [...prev.history, newPrice].slice(-60);
 
     next[co.id] = { price: newPrice, history, trend };
 

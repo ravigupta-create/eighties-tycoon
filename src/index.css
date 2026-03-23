@@ -105,3 +105,21 @@ body {
 .log-scroll::-webkit-scrollbar-thumb:hover {
   background: #33ff33;
 }
+
+/* Mobile improvements */
+@media (max-width: 640px) {
+  .crt-screen::before,
+  .crt-screen::after {
+    display: none; /* disable scanlines on mobile for performance */
+  }
+  .crt-screen {
+    animation: none; /* disable flicker on mobile */
+  }
+}
+
+/* Touch-friendly button sizing */
+@media (pointer: coarse) {
+  button {
+    min-height: 40px;
+  }
+}

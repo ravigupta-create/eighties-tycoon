@@ -13,7 +13,7 @@ import {
   sfxClick, sfxNextMonth, sfxCashIn, sfxCashOut, sfxBuy, sfxSell,
   sfxEvent, sfxChoice, sfxWarning, sfxGameOver, sfxStart, sfxSave,
   sfxReset, sfxTab, sfxWork, sfxCrash, sfxBoom, sfxBirthday,
-  sfxNewsTicker,
+  sfxNewsTicker, sfxAchievement,
   setMuted, isMuted, setVolume, getVolume,
 } from './sounds'
 import { lazy, Suspense } from 'react'
@@ -55,7 +55,7 @@ function ConfirmModal({ title, message, onConfirm, onCancel }) {
 }
 
 /* ── Settings Menu ── */
-function SettingsMenu({ onClose, onNewLife, soundMuted, onToggleMute, soundVolume, onVolumeChange }) {
+function SettingsMenu({ onClose, onNewLife, soundMuted, onToggleMute, soundVolume, onVolumeChange, musicOn, onToggleMusic }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.85)' }}>
       <div className="crt-screen bg-crt-dark border-2 border-phosphor rounded-lg p-6 max-w-sm w-full shadow-[0_0_30px_rgba(51,255,51,0.15)]">
@@ -82,6 +82,18 @@ function SettingsMenu({ onClose, onNewLife, soundMuted, onToggleMute, soundVolum
               className="flex-1 accent-[#33ff33] h-1"
             />
             <span className="text-phosphor text-xs w-8 text-right">{Math.round(soundVolume * 100)}%</span>
+          </div>
+        </div>
+
+        {/* Music */}
+        <div className="border border-crt-border rounded p-3 mb-3">
+          <div className="flex items-center justify-between">
+            <span className="text-phosphor text-sm">SYNTHWAVE MUSIC</span>
+            <button onClick={onToggleMusic}
+              className={`font-[family-name:var(--font-crt)] text-xs px-3 py-1 rounded border cursor-pointer transition-all ${
+                musicOn ? 'border-phosphor text-phosphor' : 'border-crt-border text-phosphor-dim hover:border-phosphor-dim'
+              }`}
+            >{musicOn ? '[ ♪ ON ]' : '[ OFF ]'}</button>
           </div>
         </div>
 
@@ -206,7 +218,7 @@ function GameOverScreen({ state, dispatch, onNewLife }) {
   const yearsPlayed = state.year - 1980
   const monthsPlayed = yearsPlayed * 12 + state.month
 
-  useEffect(() => { sfxGameOver(); }, []);
+  useEffect(() => { stopMusic(); sfxGameOver(); }, []);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-crt-bg p-4">
@@ -499,15 +511,23 @@ function StatusPanel({ state, dispatch }) {
         </div>
         <StatBar label="HEALTH" value={state.health} max={100} color={healthColor} />
         <StatBar label="HAPPINESS" value={state.happiness} max={100} color={happyColor} />
-        <p className="text-phosphor-dim text-xs mt-2">
-          LIFESTYLE: <span className="text-amber">{tier.name.toUpperCase()}</span>
-          <span className="text-phosphor-dim"> — ${totalExp}/mo</span>
-          {state.expenseMultiplier !== 1.0 && state.expenseMultiplierExpiry > 0 && (
-            <span className={state.expenseMultiplier > 1 ? 'text-danger' : 'text-phosphor'}>
-              {' '}({state.expenseMultiplier > 1 ? '+' : ''}{Math.round((state.expenseMultiplier - 1) * 100)}% for {state.expenseMultiplierExpiry}mo)
-            </span>
+        <div className="text-phosphor-dim text-xs mt-2 space-y-0.5">
+          <p>
+            LIFESTYLE: <span className="text-amber">{tier.name.toUpperCase()}</span>
+            <span className="text-phosphor-dim"> — ${totalExp}/mo</span>
+            {state.expenseMultiplier !== 1.0 && state.expenseMultiplierExpiry > 0 && (
+              <span className={state.expenseMultiplier > 1 ? 'text-danger' : 'text-phosphor'}>
+                {' '}({state.expenseMultiplier > 1 ? '+' : ''}{Math.round((state.expenseMultiplier - 1) * 100)}% for {state.expenseMultiplierExpiry}mo)
+              </span>
+            )}
+          </p>
+          {(state.businesses?.length || 0) > 0 && (
+            <p>BUSINESSES: <span className="text-phosphor">{state.businesses.length}</span> <span className="text-phosphor">(+${totalBusinessIncome(state.businesses)}/mo)</span></p>
           )}
-        </p>
+          {(state.loan?.principal || 0) > 0 && (
+            <p>LOAN: <span className="text-danger">${state.loan.principal.toLocaleString()} (-${Math.round(state.loan.principal * state.loan.interestRate)}/mo interest)</span></p>
+          )}
+        </div>
       </div>
 
       {/* Career Panel */}
@@ -1033,6 +1053,7 @@ function GameScreen({ state, dispatch, onNewLife }) {
   const [soundVolume, setSoundVolume] = useState(getVolume())
   const [achievementToast, setAchievementToast] = useState(null)
   const [musicOn, setMusicOn] = useState(false)
+  const [showVictory, setShowVictory] = useState(false)
   const totalValue = portfolioValue(state.portfolio, state.stocks)
   const propValue = totalPropertyValue(state.properties || [])
   const netWorth = +(state.cash + totalValue + propValue).toFixed(2)
@@ -1061,6 +1082,17 @@ function GameScreen({ state, dispatch, onNewLife }) {
     }
   }, [state.currentHeadline]);
 
+  // Victory detection
+  const prevVictory = useRef(state.victory);
+  useEffect(() => {
+    if (state.victory && !prevVictory.current) {
+      setShowVictory(true);
+      sfxStart(); // reuse start jingle as victory fanfare
+      setTimeout(() => setShowVictory(false), 8000);
+    }
+    prevVictory.current = state.victory;
+  }, [state.victory]);
+
   // Achievement checking
   useEffect(() => {
     if (!state.gameStarted || state.gameOver) return;
@@ -1069,7 +1101,7 @@ function GameScreen({ state, dispatch, onNewLife }) {
       dispatch({ type: 'UNLOCK_ACHIEVEMENT', ids: newIds });
       const ach = ACHIEVEMENTS.find(a => a.id === newIds[0]);
       if (ach) {
-        sfxCashIn(); // reuse as achievement sound
+        sfxAchievement();
         setAchievementToast({ name: ach.name, icon: ach.icon });
       }
     }
@@ -1165,7 +1197,7 @@ function GameScreen({ state, dispatch, onNewLife }) {
 
   const tabBtn = (id, label) => (
     <button onClick={() => { sfxTab(); setTab(id); }}
-      className={`font-[family-name:var(--font-crt)] text-sm px-4 py-2 cursor-pointer transition-all border-b-2 ${
+      className={`font-[family-name:var(--font-crt)] text-xs sm:text-sm px-2 sm:px-3 py-2 cursor-pointer transition-all border-b-2 whitespace-nowrap flex-shrink-0 ${
         tab === id
           ? 'text-phosphor border-phosphor'
           : 'text-phosphor-dim border-transparent hover:text-phosphor hover:border-phosphor-dim'
@@ -1195,6 +1227,25 @@ function GameScreen({ state, dispatch, onNewLife }) {
         <AchievementToast name={achievementToast.name} icon={achievementToast.icon}
           onDone={() => setAchievementToast(null)} />
       )}
+      {/* Victory Banner */}
+      {showVictory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="bg-black/80 border-4 border-amber rounded-lg px-10 py-8 text-center shadow-[0_0_60px_rgba(255,176,0,0.4)] animate-pulse">
+            <p className="text-amber text-4xl font-bold font-[family-name:var(--font-crt)] tracking-widest" style={{ textShadow: '0 0 20px #ffb000' }}>
+              ★ MILLIONAIRE ★
+            </p>
+            <p className="text-phosphor text-lg font-[family-name:var(--font-crt)] mt-3">
+              YOU CONQUERED THE 80s!
+            </p>
+            <p className="text-phosphor-dim text-sm font-[family-name:var(--font-crt)] mt-2">
+              Net worth: ${netWorth.toLocaleString()}
+            </p>
+            <p className="text-amber-dim text-xs font-[family-name:var(--font-crt)] mt-4">
+              Keep playing to push your score higher...
+            </p>
+          </div>
+        </div>
+      )}
       {showEvent && <EventModal event={state.pendingEvent} dispatch={dispatch} />}
       {showSettings && (
         <SettingsMenu
@@ -1204,6 +1255,8 @@ function GameScreen({ state, dispatch, onNewLife }) {
           onToggleMute={handleToggleMute}
           soundVolume={soundVolume}
           onVolumeChange={handleVolumeChange}
+          musicOn={musicOn}
+          onToggleMusic={toggleMusic}
         />
       )}
       {showConfirm && (
@@ -1267,14 +1320,14 @@ function GameScreen({ state, dispatch, onNewLife }) {
                 color={state.happiness > 60 ? 'cyan' : state.happiness > 30 ? 'amber' : 'danger'} />
             </div>
 
-            {/* Tab bar */}
-            <div className="flex border-b border-crt-border bg-crt-bg">
+            {/* Tab bar — scrollable on mobile */}
+            <div className="flex border-b border-crt-border bg-crt-bg overflow-x-auto log-scroll">
               {tabBtn('status', '[ STATUS ]')}
-              {tabBtn('portfolio', '[ PORTFOLIO ]')}
+              {tabBtn('portfolio', '[ STOCKS ]')}
               {tabBtn('realestate', '[ PROPERTY ]')}
               {tabBtn('luxury', '[ LUXURY ]')}
-              {tabBtn('business', '[ BUSINESS ]')}
-              {tabBtn('achievements', '[ TROPHIES ]')}
+              {tabBtn('business', '[ BIZ ]')}
+              {tabBtn('achievements', '[ TROPHY ]')}
             </div>
 
             <div className="p-4">

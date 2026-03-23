@@ -197,6 +197,29 @@ export function sfxBirthday() {
   });
 }
 
+// Achievement unlocked — triumphant fanfare
+export function sfxAchievement() {
+  if (muted) return;
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((f, i) => {
+    setTimeout(() => playTone(f, 0.2, 'triangle'), i * 100);
+  });
+  setTimeout(() => playTone(1047, 0.4, 'sine'), 400);
+}
+
+// Ambient city hum (for 3D world)
+export function sfxAmbientHum() {
+  if (muted) return;
+  playTone(80, 2.0, 'sine', true);
+  setTimeout(() => playTone(120, 1.5, 'sine', true), 500);
+}
+
+// Footstep
+export function sfxFootstep() {
+  if (muted) return;
+  playNoise(0.04, 0.03);
+}
+
 // News ticker — teletype clatter
 export function sfxNewsTicker(sentiment) {
   if (muted) return;
