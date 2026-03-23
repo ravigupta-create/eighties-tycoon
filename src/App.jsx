@@ -4,6 +4,9 @@ import { COMPANIES, portfolioValue } from './stockMarket'
 import { PROPERTIES, totalPropertyValue, totalMaintenance, totalPropertyHappiness } from './realEstate'
 import { CAREER_RANKS, getRank, isMaxRank, workHardAmount, workHardHealthCost } from './career'
 import { LUXURY_ITEMS, getReputationTier, getNextReputationTier } from './luxuryShop'
+import { BUSINESSES } from './businesses'
+import { ACHIEVEMENTS, checkAchievements } from './achievements'
+import { startMusic, stopMusic, setMusicVolume, isMusicPlaying } from './music'
 import { rollRandomEvent } from './randomEvents'
 import { saveGame, loadGame, deleteSave, hasSave, saveSettings, loadSettings } from './saveLoad'
 import {
@@ -253,6 +256,25 @@ function GameOverScreen({ state, dispatch, onNewLife }) {
           </div>
         </div>
 
+        {/* Score */}
+        {(() => {
+          const score = Math.round(netWorth / 100) + ((state.career?.rankIndex || 0) * 500) + ((state.reputation || 0) * 50) + (monthsPlayed * 10) + ((state.achievements?.length || 0) * 200);
+          const grade = score >= 10000 ? 'S' : score >= 5000 ? 'A' : score >= 2000 ? 'B' : score >= 800 ? 'C' : score >= 300 ? 'D' : 'F';
+          const title = grade === 'S' ? '80s LEGEND' : grade === 'A' ? 'Wall Street Wolf' : grade === 'B' ? 'Rising Star' : grade === 'C' ? 'Middle Class' : grade === 'D' ? 'Struggling' : 'Broke Dreamer';
+          const gradeColor = grade === 'S' || grade === 'A' ? 'text-amber' : grade === 'B' || grade === 'C' ? 'text-phosphor' : 'text-danger';
+          return (
+            <div className="border border-crt-border rounded p-4 mb-4 text-center">
+              <p className="text-phosphor-dim text-xs mb-1">═══ FINAL SCORE ═══</p>
+              <p className={`text-4xl font-bold ${gradeColor}`} style={{ textShadow: '0 0 10px currentColor' }}>{grade}</p>
+              <p className="text-amber text-sm mt-1">{title}</p>
+              <p className="text-phosphor-dim text-xs mt-1">{score.toLocaleString()} points</p>
+              <p className="text-phosphor-dim text-[10px] mt-1">
+                Achievements: {state.achievements?.length || 0}/{ACHIEVEMENTS.length}
+              </p>
+            </div>
+          );
+        })()}
+
         <button onClick={() => { sfxReset(); onNewLife(); }}
           className="w-full bg-crt-bg border-2 border-phosphor text-phosphor font-[family-name:var(--font-crt)] text-lg px-4 py-3 rounded cursor-pointer hover:bg-phosphor hover:text-crt-bg transition-all font-bold tracking-wider"
         >[ TRY AGAIN ]</button>
@@ -383,6 +405,7 @@ function PortfolioPanel({ state, dispatch }) {
 
   return (
     <div>
+      <NetWorthChart history={state.netWorthHistory} />
       <div className="border border-crt-border rounded p-3 mb-3 flex flex-wrap gap-4 justify-between text-sm">
         <span className="text-phosphor"><span className="text-phosphor-dim">CASH: </span>${state.cash.toLocaleString()}</span>
         <span className="text-amber"><span className="text-amber-dim">HOLDINGS: </span>${totalValue.toLocaleString()}</span>
@@ -701,6 +724,173 @@ function RealEstatePanel({ state, dispatch }) {
   );
 }
 
+/* ── Achievement Toast ── */
+function AchievementToast({ name, icon, onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 4000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div className="fixed top-16 right-4 z-50 animate-pulse">
+      <div className="bg-crt-dark border-2 border-amber rounded-lg px-4 py-3 shadow-[0_0_20px_rgba(255,176,0,0.3)]">
+        <p className="text-amber text-xs font-[family-name:var(--font-crt)] font-bold">★ ACHIEVEMENT UNLOCKED ★</p>
+        <p className="text-phosphor text-sm font-[family-name:var(--font-crt)] mt-1">{icon} {name}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ── Achievements Panel ── */
+function AchievementsPanel({ state }) {
+  const unlocked = state.achievements || [];
+  const categories = [...new Set(ACHIEVEMENTS.map(a => a.category))];
+  const total = ACHIEVEMENTS.length;
+  const done = unlocked.length;
+
+  return (
+    <div>
+      <div className="border border-crt-border rounded p-3 mb-3 flex justify-between text-sm">
+        <span className="text-phosphor"><span className="text-phosphor-dim">UNLOCKED: </span>{done}/{total}</span>
+        <span className="text-amber">{Math.round((done / total) * 100)}% COMPLETE</span>
+      </div>
+      {categories.map(cat => (
+        <div key={cat} className="border border-crt-border rounded p-3 mb-2">
+          <p className="text-amber-dim text-xs mb-2">═══ {cat.toUpperCase()} ═══</p>
+          <div className="grid grid-cols-1 gap-1.5">
+            {ACHIEVEMENTS.filter(a => a.category === cat).map(ach => {
+              const done = unlocked.includes(ach.id);
+              return (
+                <div key={ach.id} className={`flex items-center gap-2 text-xs p-1.5 rounded ${done ? 'bg-crt-bg/50' : 'opacity-50'}`}>
+                  <span className="text-base">{done ? ach.icon : '🔒'}</span>
+                  <div>
+                    <span className={done ? 'text-phosphor font-bold' : 'text-phosphor-dim'}>{ach.name}</span>
+                    <span className="text-phosphor-dim ml-2">{ach.desc}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Businesses & Loans Panel ── */
+function BusinessPanel({ state, dispatch }) {
+  const rep = state.reputation || 0;
+  const owned = state.businesses || [];
+  const loan = state.loan || { principal: 0, interestRate: 0.05 };
+  const rank = getRank(state.career?.rankIndex || 0);
+  const maxLoan = rank.salary * 5;
+  const canBorrow = loan.principal === 0 && state.cash < maxLoan;
+
+  return (
+    <div>
+      {/* Businesses */}
+      <div className="border border-crt-border rounded p-3 mb-3">
+        <p className="text-phosphor-dim text-xs mb-3">═══ SIDE BUSINESSES ═══</p>
+        <div className="flex flex-col gap-2">
+          {BUSINESSES.map(biz => {
+            const isOwned = owned.includes(biz.id);
+            const locked = (biz.repRequired || 0) > rep;
+            const canBuy = state.cash >= biz.price && !locked && !isOwned;
+
+            if (locked) {
+              return (
+                <div key={biz.id} className="border border-crt-border rounded p-3 opacity-50">
+                  <span className="text-phosphor-dim text-sm">🔒 {biz.name.toUpperCase()}</span>
+                  <span className="text-amber-dim text-xs ml-2">REQ: {biz.repRequired} REP</span>
+                </div>
+              );
+            }
+
+            return (
+              <div key={biz.id} className={`border rounded p-3 ${isOwned ? 'border-phosphor' : 'border-crt-border'}`}>
+                <div className="flex justify-between mb-1">
+                  <span className={`font-bold text-sm ${isOwned ? 'text-phosphor' : 'text-amber'}`}>{biz.icon} {biz.name.toUpperCase()}</span>
+                  {isOwned ? <span className="text-phosphor text-xs">✓ ACTIVE</span> : <span className="text-phosphor text-sm">${biz.price.toLocaleString()}</span>}
+                </div>
+                <p className="text-phosphor-dim text-xs mb-1">{biz.description}</p>
+                <div className="flex gap-3 text-[10px] mb-2">
+                  <span className="text-phosphor">+${biz.monthlyIncome}/mo</span>
+                  {biz.stressCost > 0 && <span className="text-danger">-{biz.stressCost} HP/mo</span>}
+                </div>
+                {!isOwned && (
+                  <button disabled={!canBuy}
+                    onClick={() => { sfxBuy(); dispatch({ type: 'BUY_BUSINESS', bizId: biz.id, price: biz.price }); }}
+                    className="w-full bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-xs px-3 py-1.5 rounded cursor-pointer hover:border-amber transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >START BUSINESS (${biz.price.toLocaleString()})</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Bank Loan */}
+      <div className="border border-crt-border rounded p-3">
+        <p className="text-phosphor-dim text-xs mb-3">═══ BANK LOAN ═══</p>
+        {loan.principal > 0 ? (
+          <div>
+            <p className="text-danger text-sm mb-1">OUTSTANDING: <span className="font-bold">${loan.principal.toLocaleString()}</span></p>
+            <p className="text-phosphor-dim text-xs mb-3">Interest: {Math.round(loan.interestRate * 100)}%/mo (${Math.round(loan.principal * loan.interestRate)}/mo)</p>
+            <div className="flex gap-2">
+              {[100, 500, loan.principal].filter(a => a <= state.cash && a > 0).map(amt => (
+                <button key={amt}
+                  onClick={() => { sfxCashOut(); dispatch({ type: 'REPAY_LOAN', amount: amt }); }}
+                  className="flex-1 bg-crt-bg border border-phosphor-dim text-phosphor font-[family-name:var(--font-crt)] text-xs px-2 py-1.5 rounded cursor-pointer hover:border-phosphor transition-all"
+                >REPAY ${amt === loan.principal ? 'ALL' : amt}</button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <p className="text-phosphor text-xs mb-2">Borrow up to ${maxLoan.toLocaleString()} (5x salary) at 5%/mo interest.</p>
+            <div className="flex gap-2">
+              {[500, 1000, maxLoan].filter(a => a <= maxLoan && a > 0).map(amt => (
+                <button key={amt} disabled={!canBorrow}
+                  onClick={() => { sfxCashIn(); dispatch({ type: 'TAKE_LOAN', amount: amt }); }}
+                  className="flex-1 bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-xs px-2 py-1.5 rounded cursor-pointer hover:border-amber transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >BORROW ${amt.toLocaleString()}</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Net Worth Chart ── */
+function NetWorthChart({ history }) {
+  if (!history || history.length < 2) return null;
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  const range = max - min || 1;
+  const w = 100; const h = 40;
+  const points = history.map((v, i) => {
+    const x = (i / (history.length - 1)) * w;
+    const y = h - ((v - min) / range) * h;
+    return `${x},${y}`;
+  }).join(' ');
+  const fillPoints = `0,${h} ${points} ${w},${h}`;
+  const up = history[history.length - 1] >= history[0];
+
+  return (
+    <div className="border border-crt-border rounded p-3 mb-3">
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-phosphor-dim">NET WORTH TREND</span>
+        <span className={up ? 'text-phosphor' : 'text-danger'}>${history[history.length - 1]?.toLocaleString()}</span>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-10">
+        <polygon points={fillPoints} fill={up ? 'rgba(51,255,51,0.1)' : 'rgba(255,51,51,0.1)'} />
+        <polyline points={points} fill="none" stroke={up ? '#33ff33' : '#ff3333'} strokeWidth="1" />
+      </svg>
+    </div>
+  );
+}
+
 /* ── Luxury Shop Panel ── */
 function LuxuryShopPanel({ state, dispatch }) {
   const rep = state.reputation || 0;
@@ -841,6 +1031,8 @@ function GameScreen({ state, dispatch, onNewLife }) {
   const [saving, setSaving] = useState(false)
   const [soundMuted, setSoundMuted] = useState(isMuted())
   const [soundVolume, setSoundVolume] = useState(getVolume())
+  const [achievementToast, setAchievementToast] = useState(null)
+  const [musicOn, setMusicOn] = useState(false)
   const totalValue = portfolioValue(state.portfolio, state.stocks)
   const propValue = totalPropertyValue(state.properties || [])
   const netWorth = +(state.cash + totalValue + propValue).toFixed(2)
@@ -868,6 +1060,20 @@ function GameScreen({ state, dispatch, onNewLife }) {
       prevHeadline.current = state.currentHeadline.headline;
     }
   }, [state.currentHeadline]);
+
+  // Achievement checking
+  useEffect(() => {
+    if (!state.gameStarted || state.gameOver) return;
+    const newIds = checkAchievements(state);
+    if (newIds.length > 0) {
+      dispatch({ type: 'UNLOCK_ACHIEVEMENT', ids: newIds });
+      const ach = ACHIEVEMENTS.find(a => a.id === newIds[0]);
+      if (ach) {
+        sfxCashIn(); // reuse as achievement sound
+        setAchievementToast({ name: ach.name, icon: ach.icon });
+      }
+    }
+  }, [state.cash, state.career, state.properties, state.luxuryItems, state.reputation, state.year, state.businesses, state.health, state.happiness]);
 
   // Handle __ROLL__ sentinel
   useEffect(() => {
@@ -940,7 +1146,19 @@ function GameScreen({ state, dispatch, onNewLife }) {
 
   const confirmNewLife = () => {
     setShowConfirm(false);
+    if (musicOn) { stopMusic(); setMusicOn(false); }
     onNewLife();
+  };
+
+  const toggleMusic = () => {
+    if (musicOn) { stopMusic(); setMusicOn(false); }
+    else { startMusic(0.12); setMusicOn(true); }
+  };
+
+  // 3D interaction callback — exit world and switch to tab
+  const handleInteractTab = (tabName) => {
+    setViewMode('crt');
+    setTab(tabName);
   };
 
   const showEvent = state.pendingEvent && state.pendingEvent !== '__ROLL__';
@@ -965,7 +1183,7 @@ function GameScreen({ state, dispatch, onNewLife }) {
           </div>
         </div>
       }>
-        <World3D state={state} dispatch={dispatch} onExit={() => setViewMode('crt')} />
+        <World3D state={state} dispatch={dispatch} onExit={() => setViewMode('crt')} onInteractTab={handleInteractTab} />
       </Suspense>
     );
   }
@@ -973,6 +1191,10 @@ function GameScreen({ state, dispatch, onNewLife }) {
   return (
     <div className="min-h-screen bg-crt-bg p-4">
       <SaveIndicator visible={saving} />
+      {achievementToast && (
+        <AchievementToast name={achievementToast.name} icon={achievementToast.icon}
+          onDone={() => setAchievementToast(null)} />
+      )}
       {showEvent && <EventModal event={state.pendingEvent} dispatch={dispatch} />}
       {showSettings && (
         <SettingsMenu
@@ -1016,6 +1238,9 @@ function GameScreen({ state, dispatch, onNewLife }) {
                   <span className="text-phosphor-dim">AGE {state.age}</span>
                   <span className="text-amber-dim">{state.reputation || 0} REP</span>
                   <span className="text-phosphor">${netWorth.toLocaleString()}</span>
+                  <button onClick={toggleMusic}
+                    className={`font-[family-name:var(--font-crt)] text-[10px] px-2 py-1 rounded cursor-pointer transition-all border ${musicOn ? 'border-phosphor text-phosphor' : 'border-crt-border text-phosphor-dim hover:border-phosphor-dim'}`}
+                  >{musicOn ? '♪ ON' : '♪ OFF'}</button>
                   <button onClick={() => { sfxClick(); setViewMode('world'); }}
                     className="bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-[10px] px-2 py-1 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_6px_rgba(255,176,0,0.2)] transition-all"
                   >3D CITY</button>
@@ -1046,8 +1271,10 @@ function GameScreen({ state, dispatch, onNewLife }) {
             <div className="flex border-b border-crt-border bg-crt-bg">
               {tabBtn('status', '[ STATUS ]')}
               {tabBtn('portfolio', '[ PORTFOLIO ]')}
-              {tabBtn('realestate', '[ REAL ESTATE ]')}
+              {tabBtn('realestate', '[ PROPERTY ]')}
               {tabBtn('luxury', '[ LUXURY ]')}
+              {tabBtn('business', '[ BUSINESS ]')}
+              {tabBtn('achievements', '[ TROPHIES ]')}
             </div>
 
             <div className="p-4">
@@ -1055,6 +1282,8 @@ function GameScreen({ state, dispatch, onNewLife }) {
               {tab === 'portfolio' && <PortfolioPanel state={state} dispatch={dispatch} />}
               {tab === 'realestate' && <RealEstatePanel state={state} dispatch={dispatch} />}
               {tab === 'luxury' && <LuxuryShopPanel state={state} dispatch={dispatch} />}
+              {tab === 'business' && <BusinessPanel state={state} dispatch={dispatch} />}
+              {tab === 'achievements' && <AchievementsPanel state={state} />}
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import { initStocks, initPortfolio, tickStocks } from './stockMarket'
 import { rollHeadline, resetHeadlineHistory } from './newsHeadlines'
 import { initProperties, tickProperties, totalMaintenance, totalPropertyHappiness } from './realEstate'
 import { initCareer, getRank, isMaxRank, workHardAmount, workHardHealthCost } from './career'
+import { totalBusinessIncome, totalBusinessStress } from './businesses'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -51,7 +52,17 @@ export const INITIAL_STATE = {
   career: initCareer(),
   // Luxury / Reputation
   reputation: 0,
-  luxuryItems: [], // array of item IDs owned
+  luxuryItems: [],
+  // Businesses
+  businesses: [],
+  // Loans
+  loan: { principal: 0, interestRate: 0.05 },
+  // Achievements
+  achievements: [],
+  // Tracking
+  wasBroke: false,
+  netWorthHistory: [],
+  victory: false,
 };
 
 let logIdCounter = 0;
@@ -148,11 +159,26 @@ export function gameReducer(state, action) {
       const rank = getRank(state.career.rankIndex);
       newCash = +(newCash + rank.salary).toFixed(2);
 
-      // Health effects from lifestyle + career stress
+      // ── Business income ──
+      const bizIncome = totalBusinessIncome(state.businesses || []);
+      const bizStress = totalBusinessStress(state.businesses || []);
+      newCash = +(newCash + bizIncome).toFixed(2);
+
+      // ── Loan interest ──
+      const loan = state.loan || { principal: 0, interestRate: 0.05 };
+      let newLoan = { ...loan };
+      if (loan.principal > 0) {
+        const interest = Math.round(loan.principal * loan.interestRate);
+        newCash = +(newCash - interest).toFixed(2);
+        newLoan = { ...loan }; // principal stays, interest deducted from cash
+      }
+
+      // Health effects from lifestyle + career stress + business stress
       let healthDelta = -tier.healthDrain;
       if (!canAfford) healthDelta = -8;
       healthDelta += news.healthEffect;
-      healthDelta -= rank.stressDrain; // career stress
+      healthDelta -= rank.stressDrain;
+      healthDelta -= bizStress;
       let newHealth = clamp(state.health + healthDelta, 0, 100);
 
       // Happiness drift
@@ -200,7 +226,13 @@ export function gameReducer(state, action) {
 
       // Salary log
       newLog = addLog(newLog, monthName, newYear,
-        `Salary: +$${rank.salary} (${rank.name})`, 'success');
+        `Salary: +$${rank.salary} (${rank.name})${bizIncome > 0 ? ` | Business: +$${bizIncome}` : ''}`, 'success');
+
+      if (loan.principal > 0) {
+        const interest = Math.round(loan.principal * loan.interestRate);
+        newLog = addLog(newLog, monthName, newYear,
+          `Loan interest: -$${interest} (owe $${loan.principal})`, 'danger');
+      }
 
       newLog = addLog(newLog, monthName, newYear,
         `Rent: $${tier.rent} | Food: $${tier.food} | Misc: $${tier.misc}${propMaintenance > 0 ? ` | Property: $${propMaintenance}` : ''}`, 'dim');
@@ -255,7 +287,17 @@ export function gameReducer(state, action) {
         expenseMultiplierExpiry: expExpiry,
         headlineHistory,
         properties: newProperties,
+        loan: newLoan,
+        wasBroke: state.wasBroke || newCash < 10,
+        netWorthHistory: [...(state.netWorthHistory || []).slice(-59), newCash],
+        victory: state.victory || (newCash >= 1000000 && !state.victory),
       };
+
+      // Victory check
+      if (next.victory && !state.victory) {
+        next.log = addLog(next.log, monthName, newYear,
+          '★ MILLIONAIRE! You conquered the 80s! ★', 'success');
+      }
 
       return checkGameOver(next);
     }
@@ -441,6 +483,53 @@ export function gameReducer(state, action) {
       };
     }
 
+    case 'BUY_BUSINESS': {
+      const { bizId, price } = action;
+      if (price > state.cash) return state;
+      if ((state.businesses || []).includes(bizId)) return state;
+      const monthName = MONTHS[state.month];
+      return {
+        ...state,
+        cash: +(state.cash - price).toFixed(2),
+        businesses: [...(state.businesses || []), bizId],
+        log: addLog(state.log, monthName, state.year, `Started a new business for $${price.toLocaleString()}!`, 'success'),
+      };
+    }
+
+    case 'TAKE_LOAN': {
+      const { amount } = action;
+      const monthName = MONTHS[state.month];
+      const currentLoan = state.loan || { principal: 0, interestRate: 0.05 };
+      return {
+        ...state,
+        cash: +(state.cash + amount).toFixed(2),
+        loan: { principal: currentLoan.principal + amount, interestRate: 0.05 },
+        log: addLog(state.log, monthName, state.year, `Took a $${amount.toLocaleString()} bank loan at 5%/mo interest.`, 'info'),
+      };
+    }
+
+    case 'REPAY_LOAN': {
+      const { amount } = action;
+      const currentLoan = state.loan || { principal: 0, interestRate: 0.05 };
+      const repay = Math.min(amount, currentLoan.principal, state.cash);
+      if (repay <= 0) return state;
+      const monthName = MONTHS[state.month];
+      return {
+        ...state,
+        cash: +(state.cash - repay).toFixed(2),
+        loan: { ...currentLoan, principal: +(currentLoan.principal - repay).toFixed(2) },
+        log: addLog(state.log, monthName, state.year, `Repaid $${repay.toLocaleString()} on loan. Remaining: $${(currentLoan.principal - repay).toLocaleString()}.`, 'success'),
+      };
+    }
+
+    case 'UNLOCK_ACHIEVEMENT': {
+      const { ids } = action;
+      const current = state.achievements || [];
+      const newIds = ids.filter(id => !current.includes(id));
+      if (newIds.length === 0) return state;
+      return { ...state, achievements: [...current, ...newIds] };
+    }
+
     case 'BUY_LUXURY': {
       const { itemId, price, reputation: repGain, happiness: happGain } = action;
       if (price > state.cash) return state;
@@ -468,7 +557,7 @@ export function gameReducer(state, action) {
     case 'RESET':
       logIdCounter = 0;
       resetHeadlineHistory();
-      return { ...INITIAL_STATE, stocks: initStocks(), portfolio: initPortfolio(), properties: initProperties(), career: initCareer(), log: [] };
+      return { ...INITIAL_STATE, stocks: initStocks(), portfolio: initPortfolio(), properties: initProperties(), career: initCareer(), businesses: [], loan: { principal: 0, interestRate: 0.05 }, achievements: [], netWorthHistory: [], log: [] };
 
     default:
       return state;

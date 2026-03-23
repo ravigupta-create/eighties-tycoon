@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createBuilding, seededRandom } from './buildings';
-import { createAsphaltTexture, createGrassTexture } from './textures';
+import { createAsphaltTexture, createGrassTexture, createNeonTexture } from './textures';
 
 const BLOCK_SIZE = 45;
 const ROAD_WIDTH = 10;
@@ -79,8 +79,57 @@ export function generateCity() {
     }
   }
 
+  // ── Landmark buildings (interactive) ──
+  addLandmarks(city);
+
   return city;
 }
+
+const LANDMARKS = [
+  { type: 'stock_exchange', name: 'WALL STREET',       color: '#00ffff', pos: [15, 0, 15],   tab: 'portfolio' },
+  { type: 'real_estate',    name: 'REAL ESTATE CO.',    color: '#33ff66', pos: [-30, 0, 20],  tab: 'realestate' },
+  { type: 'luxury_shop',    name: 'LUXURY BOUTIQUE',    color: '#ff00ff', pos: [20, 0, -25],  tab: 'luxury' },
+  { type: 'hospital',       name: 'CITY HOSPITAL',      color: '#ff3333', pos: [-25, 0, -30], tab: 'status' },
+  { type: 'arcade',         name: 'NEON ARCADE',         color: '#ffb000', pos: [0, 0, -40],  tab: 'status' },
+];
+
+function addLandmarks(city) {
+  for (const lm of LANDMARKS) {
+    const building = createBuilding(lm.type === 'hospital' ? 'commercial' : 'skyscraper', lm.name.length * 100);
+    building.position.set(...lm.pos);
+
+    // Big neon sign
+    const signTex = createNeonTexture(lm.name, lm.color, 512, 64);
+    const signGeo = new THREE.PlaneGeometry(8, 1.2);
+    const signMat = new THREE.MeshBasicMaterial({ map: signTex, transparent: true, side: THREE.DoubleSide });
+    const sign = new THREE.Mesh(signGeo, signMat);
+    sign.position.set(0, 14, 8);
+    building.add(sign);
+
+    // Bright point light
+    const light = new THREE.PointLight(lm.color, 5, 30);
+    light.position.set(0, 14, 9);
+    building.add(light);
+
+    // Interaction marker — glowing ring on ground
+    const ringGeo = new THREE.RingGeometry(2.5, 3, 32);
+    const ringMat = new THREE.MeshBasicMaterial({ color: lm.color, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(0, 0.1, 8);
+    ring.userData.pulseRing = true;
+    building.add(ring);
+
+    building.userData.interactable = true;
+    building.userData.interactType = lm.type;
+    building.userData.interactTab = lm.tab;
+    building.userData.landmarkName = lm.name;
+
+    city.add(building);
+  }
+}
+
+export { LANDMARKS };
 
 function createRoads() {
   const group = new THREE.Group();

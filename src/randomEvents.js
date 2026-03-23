@@ -151,10 +151,194 @@ const EVENT_POOL = [
   {
     prompt: 'A shady guy offers you a "guaranteed" investment scheme. $500 in, double or nothing.',
     choices: [
-      { label: 'Go for it ($500, coin flip)', effects: { gamble: 500 }, logText: '' }, // logText set dynamically
+      { label: 'Go for it ($500, coin flip)', effects: { gamble: 500 }, logText: '' },
       { label: 'Walk away (+5 Happiness)', effects: { happiness: 5 }, logText: 'Walked away from a scam. Smart.' },
     ],
     condition: (state) => state.cash >= 500,
+  },
+
+  // ── Career Events ──
+  {
+    prompt: 'Your boss offers to mentor you over weekends. Extra work but faster promotion.',
+    choices: [
+      { label: 'Accept (-8 HP, +15 Happiness)', effects: { health: -8, happiness: 15 }, logText: 'Mentorship accepted. Learning a lot!' },
+      { label: 'Too busy', effects: {}, logText: 'Turned down the mentorship.' },
+    ],
+  },
+  {
+    prompt: 'Office politics! A coworker is trying to undermine you.',
+    choices: [
+      { label: 'Confront them (-5 Happiness)', effects: { happiness: -5 }, logText: 'Confronted a backstabbing coworker.' },
+      { label: 'Take the high road (+3 Happiness)', effects: { happiness: 3 }, logText: 'Rose above the office drama.' },
+    ],
+  },
+  {
+    prompt: 'The company is offering overtime this month. Double pay but brutal hours.',
+    choices: [
+      { label: 'Take it (+$150, -12 HP)', effects: { cash: 150, health: -12 }, logText: 'Worked overtime. Exhausted but richer.' },
+      { label: 'Pass', effects: {}, logText: 'Skipped overtime. Work-life balance.' },
+    ],
+  },
+
+  // ── High Net Worth ──
+  {
+    prompt: 'A magazine wants to interview you about your success story. $500 appearance fee.',
+    choices: [
+      { label: 'Do the interview (+$500, +10 Happiness)', effects: { cash: 500, happiness: 10 }, logText: 'Featured in Success Magazine!' },
+      { label: 'Stay low-key', effects: {}, logText: 'Declined the interview.' },
+    ],
+    condition: (state) => (state.reputation || 0) >= 25,
+  },
+  {
+    prompt: 'Charity gala invitation. $300 entry but great networking.',
+    choices: [
+      { label: 'Attend (-$300, +8 Happiness)', effects: { cash: -300, happiness: 8 }, logText: 'Attended the charity gala. Met interesting people.' },
+      { label: 'Skip it', effects: { happiness: -2 }, logText: 'Skipped the gala.' },
+    ],
+    condition: (state) => state.cash >= 300,
+  },
+  {
+    prompt: 'A hostile investor wants to buy your shares at a premium. Sell everything for 20% above market?',
+    choices: [
+      { label: 'Intriguing... but no', effects: { happiness: 3 }, logText: 'Held firm against a hostile buyer.' },
+      { label: 'No way', effects: {}, logText: 'Rejected the hostile offer.' },
+    ],
+    condition: (state) => Object.values(state.portfolio || {}).reduce((s, n) => s + n, 0) > 20,
+  },
+
+  // ── Property Events ──
+  {
+    prompt: 'Your tenant flooded the bathroom. Repair costs $100.',
+    choices: [
+      { label: 'Pay for repairs (-$100)', effects: { cash: -100 }, logText: 'Fixed the flood damage.' },
+      { label: 'Ignore it (-8 Happiness)', effects: { happiness: -8 }, logText: 'Ignored the tenant problem. Guilt.' },
+    ],
+    condition: (state) => (state.properties?.length || 0) >= 1,
+  },
+  {
+    prompt: 'A neighbor complains about noise from your property. Soundproofing costs $200.',
+    choices: [
+      { label: 'Soundproof it (-$200, +5 Happiness)', effects: { cash: -200, happiness: 5 }, logText: 'Soundproofed the property. Peace restored.' },
+      { label: 'Tell them to deal with it (-5 Happiness)', effects: { happiness: -5 }, logText: 'Ignored the noise complaint.' },
+    ],
+    condition: (state) => (state.properties?.length || 0) >= 1,
+  },
+
+  // ── Decade Events ──
+  {
+    prompt: 'The 80s are in full swing! Neon everywhere. A roller skating party tonight!',
+    choices: [
+      { label: 'Roller party! (-$40, +15 Happiness, -3 HP)', effects: { cash: -40, happiness: 15, health: -3 }, logText: 'Roller skating party was RADICAL!' },
+      { label: 'Not my scene', effects: {}, logText: 'Skipped the roller party.' },
+    ],
+  },
+  {
+    prompt: 'A new Atari game just dropped. Everyone at the office is talking about it.',
+    choices: [
+      { label: 'Buy it (-$60, +8 Happiness)', effects: { cash: -60, happiness: 8 }, logText: 'Bought the new Atari game. High score!' },
+      { label: 'Games are for kids', effects: { happiness: -2 }, logText: 'Skipped the Atari game.' },
+    ],
+  },
+  {
+    prompt: 'Your Walkman broke! Replace it for $50 or go without music.',
+    choices: [
+      { label: 'Replace it (-$50, +5 Happiness)', effects: { cash: -50, happiness: 5 }, logText: 'Got a new Walkman. Music is life.' },
+      { label: 'Silence is golden', effects: { happiness: -5 }, logText: 'No more Walkman. The silence is deafening.' },
+    ],
+    condition: (state) => (state.luxuryItems || []).includes('walkman'),
+  },
+  {
+    prompt: 'Someone keyed your sports car! Paint repair is $400.',
+    choices: [
+      { label: 'Fix it (-$400)', effects: { cash: -400 }, logText: 'Fixed the keyed paint on the Ferrari.' },
+      { label: 'Live with it (-10 Happiness)', effects: { happiness: -10 }, logText: 'The scratch on the Ferrari haunts you.' },
+    ],
+    condition: (state) => (state.luxuryItems || []).includes('sportscar'),
+  },
+
+  // ── Business Events ──
+  {
+    prompt: 'A supplier offers you a bulk deal. Save $100 on business costs this month.',
+    choices: [
+      { label: 'Take the deal (+$100)', effects: { cash: 100 }, logText: 'Scored a great supplier deal!' },
+      { label: 'Seems fishy', effects: {}, logText: 'Passed on the supplier deal.' },
+    ],
+    condition: (state) => (state.businesses?.length || 0) >= 1,
+  },
+  {
+    prompt: 'Your business got a shoutout on local TV! Expect extra revenue.',
+    choices: [
+      { label: 'Celebrate! (+$200, +10 Happiness)', effects: { cash: 200, happiness: 10 }, logText: 'Business featured on TV! Revenue boost!' },
+      { label: 'Stay humble', effects: { cash: 100 }, logText: 'TV mention brought in some extra cash.' },
+    ],
+    condition: (state) => (state.businesses?.length || 0) >= 1,
+  },
+
+  // ── Health / Lifestyle ──
+  {
+    prompt: 'Free flu shots at the clinic today.',
+    choices: [
+      { label: 'Get the shot (+5 HP)', effects: { health: 5 }, logText: 'Got a flu shot. Prevention is key.' },
+      { label: 'Needles? No thanks', effects: {}, logText: 'Skipped the flu shot.' },
+    ],
+  },
+  {
+    prompt: 'Your friends are doing a weekend hike. Fresh air and exercise.',
+    choices: [
+      { label: 'Join them (+8 HP, +6 Happiness)', effects: { health: 8, happiness: 6 }, logText: 'Great hike with friends! Feeling refreshed.' },
+      { label: 'Too tired', effects: { happiness: -2 }, logText: 'Skipped the hike.' },
+    ],
+  },
+  {
+    prompt: 'A local diner has an all-you-can-eat special for $15.',
+    choices: [
+      { label: 'Eat up! (-$15, +5 Happiness, -2 HP)', effects: { cash: -15, happiness: 5, health: -2 }, logText: 'Stuffed yourself at the diner. No regrets.' },
+      { label: 'Pass', effects: {}, logText: 'Skipped the all-you-can-eat.' },
+    ],
+  },
+  {
+    prompt: 'A stray cat has been hanging around your door. Adopt it?',
+    choices: [
+      { label: 'Adopt! (-$30/initial, +10 Happiness)', effects: { cash: -30, happiness: 10 }, logText: 'Adopted a stray cat. Purring companion.' },
+      { label: 'Shoo it away', effects: {}, logText: 'Shooed the cat away.' },
+    ],
+  },
+  {
+    prompt: 'Insomnia is killing you. Sleeping pills cost $40.',
+    choices: [
+      { label: 'Buy pills (-$40, +8 HP)', effects: { cash: -40, health: 8 }, logText: 'Finally got some sleep. Feeling rested.' },
+      { label: 'Tough it out (-5 HP)', effects: { health: -5 }, logText: 'Another sleepless night.' },
+    ],
+  },
+  {
+    prompt: 'A motivational speaker is in town. Tickets $75.',
+    choices: [
+      { label: 'Go! (-$75, +12 Happiness)', effects: { cash: -75, happiness: 12 }, logText: 'Inspirational speech! Feeling motivated.' },
+      { label: 'Self-help is a scam', effects: {}, logText: 'Skipped the motivational speaker.' },
+    ],
+  },
+
+  // ── Windfalls ──
+  {
+    prompt: 'You found a $20 bill in your old jacket pocket!',
+    choices: [
+      { label: 'Score! (+$20)', effects: { cash: 20 }, logText: 'Found $20 in an old jacket!' },
+      { label: 'Donate it (+5 Happiness)', effects: { happiness: 5 }, logText: 'Donated the found $20.' },
+    ],
+  },
+  {
+    prompt: 'Tax refund! The government owes you $180.',
+    choices: [
+      { label: 'Save it (+$180)', effects: { cash: 180 }, logText: 'Got a $180 tax refund!' },
+      { label: 'Splurge (+$180, -$100, +8 Happiness)', effects: { cash: 80, happiness: 8 }, logText: 'Tax refund! Treated yourself.' },
+    ],
+  },
+  {
+    prompt: 'Your old college roommate repaid a forgotten $75 debt!',
+    choices: [
+      { label: 'Take it (+$75)', effects: { cash: 75 }, logText: 'Old debt repaid! +$75.' },
+      { label: 'Tell them to keep it (+8 Happiness)', effects: { happiness: 8 }, logText: 'Forgave the old debt. Good vibes.' },
+    ],
   },
 ];
 
