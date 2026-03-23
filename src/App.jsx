@@ -4,7 +4,7 @@ import { COMPANIES, portfolioValue } from './stockMarket'
 import { PROPERTIES, totalPropertyValue, totalMaintenance, totalPropertyHappiness } from './realEstate'
 import { CAREER_RANKS, getRank, isMaxRank, workHardAmount, workHardHealthCost } from './career'
 import { LUXURY_ITEMS, getReputationTier, getNextReputationTier } from './luxuryShop'
-import { BUSINESSES } from './businesses'
+import { BUSINESSES, totalBusinessIncome } from './businesses'
 import { ACHIEVEMENTS, checkAchievements } from './achievements'
 import { startMusic, stopMusic, setMusicVolume, isMusicPlaying } from './music'
 import { rollRandomEvent } from './randomEvents'
@@ -179,11 +179,11 @@ function NameEntry({ onStart, onLoad, savedName, savedState }) {
         </div>
       )}
 
-      <div className="crt-screen bg-crt-dark border-2 border-crt-border rounded-lg p-8 max-w-md w-full shadow-[0_0_30px_rgba(51,255,51,0.1)]">
-        <h1 className="text-phosphor text-3xl font-bold text-center mb-2 text-glow tracking-wider">
+      <div className="crt-screen bg-crt-dark border-2 border-crt-border rounded-lg p-5 sm:p-8 max-w-md w-full shadow-[0_0_30px_rgba(51,255,51,0.1)]">
+        <h1 className="text-phosphor text-2xl sm:text-3xl font-bold text-center mb-2 text-glow tracking-wider">
           EIGHTIES TYCOON
         </h1>
-        <p className="text-phosphor-dim text-center mb-8 text-sm">══════════════════════════</p>
+        <p className="text-phosphor-dim text-center mb-6 sm:mb-8 text-xs sm:text-sm">══════════════════════</p>
 
         {savedName && (
           <button onClick={() => { sfxStart(); onLoad(); }}
@@ -222,8 +222,8 @@ function GameOverScreen({ state, dispatch, onNewLife }) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-crt-bg p-4">
-      <div className="crt-screen bg-crt-dark border-2 border-crt-border rounded-lg p-8 max-w-lg w-full shadow-[0_0_40px_rgba(255,51,51,0.2)]">
-        <h1 className="text-danger text-3xl font-bold text-center mb-2 tracking-wider" style={{ textShadow: '0 0 10px rgba(255,51,51,0.5)' }}>
+      <div className="crt-screen bg-crt-dark border-2 border-crt-border rounded-lg p-4 sm:p-8 max-w-lg w-full shadow-[0_0_40px_rgba(255,51,51,0.2)] max-h-[95vh] overflow-y-auto log-scroll">
+        <h1 className="text-danger text-2xl sm:text-3xl font-bold text-center mb-2 tracking-wider" style={{ textShadow: '0 0 10px rgba(255,51,51,0.5)' }}>
           GAME OVER
         </h1>
         <p className="text-phosphor-dim text-center mb-6 text-sm">══════════════════════════</p>
@@ -522,7 +522,7 @@ function StatusPanel({ state, dispatch }) {
             )}
           </p>
           {(state.businesses?.length || 0) > 0 && (
-            <p>BUSINESSES: <span className="text-phosphor">{state.businesses.length}</span> <span className="text-phosphor">(+${totalBusinessIncome(state.businesses)}/mo)</span></p>
+            <p>BUSINESSES: <span className="text-phosphor">{state.businesses.length}</span> <span className="text-phosphor">(+${totalBusinessIncome(state.businesses || [])}/mo)</span></p>
           )}
           {(state.loan?.principal || 0) > 0 && (
             <p>LOAN: <span className="text-danger">${state.loan.principal.toLocaleString()} (-${Math.round(state.loan.principal * state.loan.interestRate)}/mo interest)</span></p>
@@ -1187,6 +1187,15 @@ function GameScreen({ state, dispatch, onNewLife }) {
     else { startMusic(0.12); setMusicOn(true); }
   };
 
+  // Pause music when entering 3D, resume when exiting
+  useEffect(() => {
+    if (viewMode === 'world' && musicOn) {
+      stopMusic();
+    } else if (viewMode === 'crt' && musicOn) {
+      startMusic(0.12);
+    }
+  }, [viewMode]);
+
   // 3D interaction callback — exit world and switch to tab
   const handleInteractTab = (tabName) => {
     setViewMode('crt');
@@ -1206,7 +1215,27 @@ function GameScreen({ state, dispatch, onNewLife }) {
   )
 
   // 3D World mode
+  const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
+
   if (viewMode === 'world') {
+    if (isMobile) {
+      return (
+        <div className="fixed inset-0 bg-crt-bg flex flex-col items-center justify-center p-6 z-30">
+          <div className="crt-screen bg-crt-dark border-2 border-amber rounded-lg p-6 max-w-sm w-full text-center shadow-[0_0_30px_rgba(255,176,0,0.15)]">
+            <p className="text-amber text-2xl font-bold font-[family-name:var(--font-crt)] mb-3">3D CITY</p>
+            <p className="text-phosphor text-sm font-[family-name:var(--font-crt)] mb-4">
+              The 3D city requires a keyboard and mouse to explore.
+            </p>
+            <p className="text-phosphor-dim text-xs font-[family-name:var(--font-crt)] mb-6">
+              Visit on a desktop/laptop for the full first-person experience with WASD movement, mouse look, and building interactions.
+            </p>
+            <button onClick={() => setViewMode('crt')}
+              className="w-full bg-crt-bg border-2 border-phosphor text-phosphor font-[family-name:var(--font-crt)] text-sm px-4 py-3 rounded cursor-pointer hover:bg-phosphor hover:text-crt-bg transition-all font-bold"
+            >[ BACK TO TERMINAL ]</button>
+          </div>
+        </div>
+      );
+    }
     return (
       <Suspense fallback={
         <div className="fixed inset-0 bg-black flex items-center justify-center">
@@ -1282,25 +1311,29 @@ function GameScreen({ state, dispatch, onNewLife }) {
         <div className="flex flex-col lg:flex-row gap-4">
         <div className="flex-1 min-w-0">
           <div className="crt-screen bg-crt-dark border-2 border-crt-border rounded-lg shadow-[0_0_30px_rgba(51,255,51,0.1)]">
-            {/* Header */}
-            <div className="border-b border-crt-border p-4">
-              <div className="flex justify-between items-center flex-wrap gap-2">
-                <h1 className="text-phosphor text-xl font-bold text-glow tracking-wider">EIGHTIES TYCOON</h1>
-                <div className="flex items-center gap-3 text-sm">
-                  <span className="text-amber">{getMonthName(state.month)} {state.year}</span>
-                  <span className="text-phosphor-dim">AGE {state.age}</span>
-                  <span className="text-amber-dim">{state.reputation || 0} REP</span>
-                  <span className="text-phosphor">${netWorth.toLocaleString()}</span>
+            {/* Header — responsive: stacks on mobile */}
+            <div className="border-b border-crt-border p-3 sm:p-4">
+              <div className="flex justify-between items-center gap-2 mb-1">
+                <h1 className="text-phosphor text-base sm:text-xl font-bold text-glow tracking-wider">EIGHTIES TYCOON</h1>
+                <div className="flex items-center gap-1.5">
                   <button onClick={toggleMusic}
-                    className={`font-[family-name:var(--font-crt)] text-[10px] px-2 py-1 rounded cursor-pointer transition-all border ${musicOn ? 'border-phosphor text-phosphor' : 'border-crt-border text-phosphor-dim hover:border-phosphor-dim'}`}
-                  >{musicOn ? '♪ ON' : '♪ OFF'}</button>
-                  <button onClick={() => { sfxClick(); setViewMode('world'); }}
-                    className="bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-[10px] px-2 py-1 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_6px_rgba(255,176,0,0.2)] transition-all"
-                  >3D CITY</button>
+                    className={`font-[family-name:var(--font-crt)] text-[10px] px-1.5 py-0.5 rounded cursor-pointer transition-all border ${musicOn ? 'border-phosphor text-phosphor' : 'border-crt-border text-phosphor-dim hover:border-phosphor-dim'}`}
+                  >{musicOn ? '♪' : '♪'}</button>
+                  {!isMobile && (
+                    <button onClick={() => { sfxClick(); setViewMode('world'); }}
+                      className="bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-[10px] px-1.5 py-0.5 rounded cursor-pointer hover:border-amber transition-all"
+                    >3D</button>
+                  )}
                   <button onClick={() => { sfxClick(); setShowSettings(true); }}
-                    className="text-phosphor-dim hover:text-phosphor transition-colors cursor-pointer text-lg leading-none" title="Settings"
+                    className="text-phosphor-dim hover:text-phosphor transition-colors cursor-pointer text-base leading-none" title="Settings"
                   >⚙</button>
                 </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] sm:text-xs font-[family-name:var(--font-crt)]">
+                <span className="text-amber">{getMonthName(state.month).slice(0, 3)} {state.year}</span>
+                <span className="text-phosphor-dim">AGE {state.age}</span>
+                <span className="text-amber-dim">{state.reputation || 0} REP</span>
+                <span className="text-phosphor text-glow">${netWorth.toLocaleString()}</span>
               </div>
             </div>
 
@@ -1321,7 +1354,7 @@ function GameScreen({ state, dispatch, onNewLife }) {
             </div>
 
             {/* Tab bar — scrollable on mobile */}
-            <div className="flex border-b border-crt-border bg-crt-bg overflow-x-auto log-scroll">
+            <div className="flex border-b border-crt-border bg-crt-bg overflow-x-auto tab-scroll">
               {tabBtn('status', '[ STATUS ]')}
               {tabBtn('portfolio', '[ STOCKS ]')}
               {tabBtn('realestate', '[ PROPERTY ]')}
@@ -1342,7 +1375,7 @@ function GameScreen({ state, dispatch, onNewLife }) {
         </div>
 
         <div className="w-full lg:w-72 flex-shrink-0">
-          <div className="lg:sticky lg:top-4 h-[calc(100vh-2rem)]">
+          <div className="lg:sticky lg:top-4 h-64 sm:h-80 lg:h-[calc(100vh-2rem)]">
             <LifeLog log={state.log} />
           </div>
         </div>

@@ -29,8 +29,24 @@ export function loadGame() {
     const parsed = JSON.parse(raw);
     // Basic validation — check a few required fields
     if (!parsed.playerName || typeof parsed.year !== 'number') return null;
-    // Ensure pendingEvent is cleared (was serialized as null)
+    // Ensure pendingEvent is cleared
     parsed.pendingEvent = null;
+    // Backward compatibility — fill in defaults for fields added after initial save
+    parsed.businesses = parsed.businesses || [];
+    parsed.loan = parsed.loan || { principal: 0, interestRate: 0.05 };
+    parsed.achievements = parsed.achievements || [];
+    parsed.netWorthHistory = parsed.netWorthHistory || [];
+    parsed.career = parsed.career || { rankIndex: 0, promotionMeter: 0 };
+    parsed.properties = parsed.properties || [];
+    parsed.luxuryItems = parsed.luxuryItems || [];
+    parsed.reputation = parsed.reputation || 0;
+    parsed.happiness = parsed.happiness ?? 75;
+    parsed.expenseMultiplier = parsed.expenseMultiplier ?? 1.0;
+    parsed.expenseMultiplierExpiry = parsed.expenseMultiplierExpiry || 0;
+    parsed.headlineHistory = parsed.headlineHistory || [];
+    parsed.currentHeadline = parsed.currentHeadline || null;
+    parsed.wasBroke = parsed.wasBroke || false;
+    parsed.victory = parsed.victory || false;
     return parsed;
   } catch {
     return null;
