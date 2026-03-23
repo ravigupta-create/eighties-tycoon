@@ -13,7 +13,10 @@ import {
   sfxNewsTicker,
   setMuted, isMuted, setVolume, getVolume,
 } from './sounds'
+import { lazy, Suspense } from 'react'
 import './App.css'
+
+const World3D = lazy(() => import('./world/World3D'))
 
 const AUTOSAVE_INTERVAL = 3 * 60 * 1000; // 3 minutes
 
@@ -832,6 +835,7 @@ function NewsTicker({ headline, sentiment, expenseMultiplier, expenseMultiplierE
 /* ── Game Screen ── */
 function GameScreen({ state, dispatch, onNewLife }) {
   const [tab, setTab] = useState('status')
+  const [viewMode, setViewMode] = useState('crt') // 'crt' | 'world'
   const [showSettings, setShowSettings] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -951,6 +955,21 @@ function GameScreen({ state, dispatch, onNewLife }) {
     >{label}</button>
   )
 
+  // 3D World mode
+  if (viewMode === 'world') {
+    return (
+      <Suspense fallback={
+        <div className="fixed inset-0 bg-black flex items-center justify-center">
+          <div className="text-phosphor font-[family-name:var(--font-crt)] text-xl animate-pulse text-glow">
+            LOADING CITY...
+          </div>
+        </div>
+      }>
+        <World3D state={state} dispatch={dispatch} onExit={() => setViewMode('crt')} />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-crt-bg p-4">
       <SaveIndicator visible={saving} />
@@ -997,6 +1016,9 @@ function GameScreen({ state, dispatch, onNewLife }) {
                   <span className="text-phosphor-dim">AGE {state.age}</span>
                   <span className="text-amber-dim">{state.reputation || 0} REP</span>
                   <span className="text-phosphor">${netWorth.toLocaleString()}</span>
+                  <button onClick={() => { sfxClick(); setViewMode('world'); }}
+                    className="bg-crt-bg border border-amber-dim text-amber font-[family-name:var(--font-crt)] text-[10px] px-2 py-1 rounded cursor-pointer hover:border-amber hover:shadow-[0_0_6px_rgba(255,176,0,0.2)] transition-all"
+                  >3D CITY</button>
                   <button onClick={() => { sfxClick(); setShowSettings(true); }}
                     className="text-phosphor-dim hover:text-phosphor transition-colors cursor-pointer text-lg leading-none" title="Settings"
                   >⚙</button>
